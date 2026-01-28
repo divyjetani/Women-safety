@@ -11,7 +11,6 @@ import 'package:mobile/services/api_service.dart';
 
 // ✅ these are screens you can create (simple placeholders also fine)
 import 'premium_screen.dart';
-import 'package:mobile/screens/settings_screen.dart';
 import 'package:mobile/screens/notifications_screen.dart';
 import 'package:mobile/screens/edit_profile_screen.dart';
 
@@ -66,6 +65,51 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     _anim.dispose();
     super.dispose();
   }
+
+  void _showLanguageSelector() {
+    final languages = [
+      {"code": "en", "label": "English"},
+      {"code": "hi", "label": "Hindi"},
+      {"code": "gu", "label": "Gujarati"},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Select Language",
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 14),
+              ...languages.map((l) => ListTile(
+                leading: const Icon(Icons.language_rounded),
+                title: Text(l["label"]!),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text("${l["label"]} selected")),
+                  );
+                },
+              )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 
   Future<void> _loadProfile({bool showLoader = true}) async {
     try {
@@ -149,13 +193,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
       );
     }
-  }
-
-  Future<void> _logout() async {
-    await ApiService.logout();
-    if (!mounted) return;
-
-    Navigator.of(context).pushNamedAndRemoveUntil("/login", (route) => false);
   }
 
   Future<void> _addContactBottomSheet() async {
@@ -434,16 +471,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 },
                 icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
               ),
-              IconButton(
-                tooltip: "Settings",
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  );
-                },
-                icon: const Icon(Icons.settings_rounded, color: Colors.white),
-              ),
             ],
           ),
 
@@ -554,6 +581,43 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  void _showPrivacyBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Privacy Settings",
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w900)),
+            const SizedBox(height: 12),
+            const ListTile(
+              leading: Icon(Icons.lock_outline_rounded),
+              title: Text("Data Protection"),
+            ),
+            const ListTile(
+              leading: Icon(Icons.visibility_off_rounded),
+              title: Text("Account Visibility"),
+            ),
+            const ListTile(
+              leading: Icon(Icons.description_outlined),
+              title: Text("Terms & Policies"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+
   // =======================
   // Settings Card
   // =======================
@@ -586,13 +650,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             onChanged: (v) => _updateSettings(notifications: v, location: locationSharing),
           ),
 
-          _SwitchRow(
-            icon: Icons.location_on_rounded,
-            title: "Location Sharing",
-            value: locationSharing,
-            onChanged: (v) => _updateSettings(notifications: notificationEnabled, location: v),
-          ),
-
           // Theme Toggle works already ✅
           _SwitchRow(
             icon: themeProvider.isDarkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
@@ -602,14 +659,18 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           ),
 
           // const SizedBox(height: 10),
+          _OptionRow(
+            icon: Icons.language_rounded,
+            title: "Language",
+            onTap: _showLanguageSelector,
+          ),
+
 
           _OptionRow(
             icon: Icons.security_rounded,
             title: "Privacy Settings",
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Privacy Settings screen coming soon ✅")),
-              );
+              _showPrivacyBottomSheet();
             },
           ),
 
@@ -706,6 +767,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  Future<void> _logout() async {
+    await ApiService.logout();
+    if (!mounted) return;
+
+    Navigator.of(context).pushNamedAndRemoveUntil("/login", (route) => false);
+  }
+
   // =======================
   // Action Buttons
   // =======================
@@ -728,6 +796,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               Icon(Icons.workspace_premium_rounded, size: 20),
               SizedBox(width: 8),
               Text("Upgrade to Premium", style: TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        OutlinedButton(
+          onPressed: _logout,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.redAccent,
+            side: const BorderSide(color: Colors.redAccent),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            minimumSize: const Size(double.infinity, 52),
+          ),
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.logout_rounded, size: 20),
+              SizedBox(width: 8),
+              Text("Logout", style: TextStyle(fontWeight: FontWeight.w800)),
             ],
           ),
         ),

@@ -337,7 +337,7 @@ Rules:
         )
         text = (response.text or "").strip()
 
-        # ✅ Generate tips (simple logic / can be AI too)
+        # Generate tips
         tips = []
         low = req.question.lower()
         if "sos" in low:

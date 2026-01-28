@@ -26,6 +26,41 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
+class LocationFetchingCard extends StatelessWidget {
+  const LocationFetchingCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            blurRadius: 16,
+            color: Colors.black.withOpacity(0.15),
+          ),
+        ],
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 10),
+          Text("Fetching location..."),
+        ],
+      ),
+    );
+  }
+}
+
 class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _controller;
   Set<Marker> _markers = {};
@@ -51,7 +86,7 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _shareTimer;
 
   // default fallback if no last location
-  final LatLng _defaultCenter = const LatLng(28.6139, 77.2090); // Delhi
+  final LatLng _defaultCenter = const LatLng(23.0293515, 72.5530625); // Delhi
 
   @override
   void initState() {
@@ -140,9 +175,31 @@ class _MapScreenState extends State<MapScreen> {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        if (showSnackOnFail) _showSnack("Turn ON Location Service");
+        if (showSnackOnFail) {
+          showDialog(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: Text("Location Required"),
+              content: Text("Please enable location services to continue."),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text("Cancel"),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Geolocator.openLocationSettings();
+                  },
+                  child: Text("Enable"),
+                ),
+              ],
+            ),
+          );
+        }
         return;
       }
+
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
@@ -253,48 +310,6 @@ class _MapScreenState extends State<MapScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg)),
     );
-  }
-
-  Future<void> _createNewGroupDialog() async {
-    final controller = TextEditingController();
-
-    final name = await showDialog<String?>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text("Create new group"),
-          content: TextField(
-            controller: controller,
-            decoration: const InputDecoration(
-              hintText: "Group name (e.g. Hostel mates)",
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, null),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final v = controller.text.trim();
-                Navigator.pop(ctx, v.isEmpty ? null : v);
-              },
-              child: const Text("Create"),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (name == null) return;
-
-    final newGroup = SafetyGroup.dummy(name);
-    setState(() {
-      _groups = [newGroup, ..._groups];
-      _currentGroup = newGroup;
-    });
-
-    _showSnack("Group created: ${newGroup.name}");
   }
 
   void _showInviteDialog(String link) {
@@ -510,18 +525,18 @@ class _MapScreenState extends State<MapScreen> {
             // small loading top indicator
             if (_loadingLocation)
               Positioned(
-                top: 14,
+                top: 90,
                 left: 14,
                 right: 14,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: theme.cardColor.withOpacity(0.92),
+                    color: theme.cardColor.withValues( alpha: 0.92),
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
                         blurRadius: 16,
-                        color: Colors.black.withOpacity(0.15),
+                        color: Colors.black.withValues( alpha: 0.15),
                       ),
                     ],
                   ),
@@ -543,7 +558,13 @@ class _MapScreenState extends State<MapScreen> {
               bottom: 22,
               child: FloatingActionButton(
                 heroTag: "bubbleInfo",
-                child: const Icon(Icons.groups),
+                elevation: 6,
+                backgroundColor: Theme.of(context).cardColor,
+                shape: const CircleBorder(),
+                child: Icon(
+                  Icons.groups,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 onPressed: () {
                   showModalBottomSheet(
                     context: context,
@@ -553,7 +574,7 @@ class _MapScreenState extends State<MapScreen> {
                     builder: (_) => BubbleInfoSheet(group: _currentGroup),
                   );
                 },
-              ),
+              )
             ),
 
           ],
@@ -573,7 +594,7 @@ class _MapScreenState extends State<MapScreen> {
       child: Material(
         elevation: 7,
         shape: const CircleBorder(),
-        color: theme.cardColor.withOpacity(0.95),
+        color: theme.cardColor.withValues( alpha: 0.95),
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: onTap,

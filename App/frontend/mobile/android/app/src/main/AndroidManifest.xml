@@ -13,7 +13,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher">
 
-        <!-- api: AIzaSyDknBihizC878ul-j9Z4GwEjuUsFHzuU-o-->
+        <!-- api: AIzaSyDknBihizC878ul-j9Z4GwEjuUsFHzuU-o   -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value=""/>
@@ -37,14 +37,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
-                <action android:name="android.intent.action.VIEW"/>
+<!--                <action android:name="android.intent.action.VIEW"/>-->
 
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
+<!--                <category android:name="android.intent.category.DEFAULT"/>-->
+<!--                <category android:name="android.intent.category.BROWSABLE"/>-->
 
-                <data
-                    android:scheme="safebubble"
-                    android:host="join"/>
+<!--                <data-->
+<!--                    android:scheme="safebubble"-->
+<!--                    android:host="join"/>-->
             </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.

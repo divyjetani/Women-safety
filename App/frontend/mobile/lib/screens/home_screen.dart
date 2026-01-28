@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile/screens/notifications_screen.dart';
-import 'package:mobile/screens/settings_screen.dart';
+// import 'package:mobile/screens/settings_screen.dart';
 import 'package:mobile/widgets/ask_ai_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -349,17 +349,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     );
                   },
                 ),
-                _menuTile(
-                  icon: Icons.settings_rounded,
-                  title: "Settings",
-                  onTap: () {
-                    // ✅ user will do
-                    Navigator.push(
-                      this.context,
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                    );
-                  },
-                ),
+                // _menuTile(
+                //   icon: Icons.settings_rounded,
+                //   title: "Settings",
+                //   onTap: () {
+                //     // ✅ user will do
+                //     Navigator.push(
+                //       this.context,
+                //       MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                //     );
+                //   },
+                // ),
               ],
             ),
           ),
@@ -575,6 +575,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
+
+                const SizedBox(height: 20),
+
+                // ✅ Quick Actions (show always)
+                if (_isLoading) const QuickActionsSkeleton(),
+                if (!_isLoading) _buildQuickActions(context),
+
                 const SizedBox(height: 20),
 
                 // ✅ Stats grid
@@ -596,12 +603,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-
-                const SizedBox(height: 20),
-
-                // ✅ Quick Actions (show always)
-                if (_isLoading) const QuickActionsSkeleton(),
-                if (!_isLoading) _buildQuickActions(context),
 
                 const SizedBox(height: 20),
 
@@ -716,58 +717,54 @@ class _HomeScreenState extends State<HomeScreen> {
   // STATS GRID CLICKABLE
   // ======================================================
   Widget _buildStatsGridClickable(SafetyStats data) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: GridView.count(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisCount: 2,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 1.3,
-        children: [
-          _statsTapCard(
-            title: "Safe Zones",
-            value: '${data.safeZones}',
-            icon: Icons.security,
-            color: AppTheme.successColor,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "safe_zones")),
-            ),
+    return Column(
+      children: [
+        Text('Stats', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 16),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 1.3,
+            children: [
+              _statsTapCard(
+                title: "Safe Zones",
+                value: '${data.safeZones}',
+                icon: Icons.security,
+                color: AppTheme.successColor,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "safe_zones")),
+                ),
+              ),
+              _statsTapCard(
+                title: "Alerts Today",
+                value: '${data.alertsToday}',
+                icon: Icons.warning_amber,
+                color: AppTheme.warningColor,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "alerts_today")),
+                ),
+              ),
+              _statsTapCard(
+                title: "SOS Used",
+                value: '${data.sosUsed}',
+                icon: Icons.emergency,
+                color: AppTheme.dangerColor,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "sos_used")),
+                ),
+              ),
+            ],
           ),
-          _statsTapCard(
-            title: "Alerts Today",
-            value: '${data.alertsToday}',
-            icon: Icons.warning_amber,
-            color: AppTheme.warningColor,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "alerts_today")),
-            ),
-          ),
-          _statsTapCard(
-            title: "Check-ins",
-            value: '${data.checkins}',
-            icon: Icons.location_pin,
-            color: AppTheme.infoColor,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "checkins")),
-            ),
-          ),
-          _statsTapCard(
-            title: "SOS Used",
-            value: '${data.sosUsed}',
-            icon: Icons.emergency,
-            color: AppTheme.dangerColor,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "sos_used")),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
