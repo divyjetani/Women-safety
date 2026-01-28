@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'connectivity_service.dart';
 import '../models/models.dart';
 import 'package:mobile/conn_url.dart';
+import 'package:mobile/models/bubble_model.dart';
 
 class ApiService {
   static const String baseUrl = ApiUrls.baseUrl;
@@ -634,4 +635,56 @@ class ApiService {
 
     throw Exception("Upload failed (${response.statusCode}): ${response.body}");
   }
+
+  static Future<Map<String, dynamic>> askAI({
+    required int userId,
+    required String question,
+    required bool detailed,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/ai/ask'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "user_id": userId,
+          "question": question,
+          "detailed": detailed,
+        }),
+      );
+    });
+  }
+
+  // ==========================
+// ✅ BUBBLES / GROUPS
+// ==========================
+
+  static Future<CreateBubbleResponse> createBubble({
+    required String name,
+    required int icon,
+    required int color,
+  }) async {
+    final jsonResponse = await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/bubble/create'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          "name": name,
+          "icon": icon,
+          "color": color,
+        }),
+      );
+    });
+
+    return CreateBubbleResponse.fromJson(jsonResponse);
+  }
+
+  static Future<Map<String, dynamic>> joinBubble(String token) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/bubble/join/$token'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
 }

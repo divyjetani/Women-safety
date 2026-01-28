@@ -152,8 +152,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 leading: Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: (read ? Colors.grey : Theme.of(context).primaryColor)
-                        .withValues(alpha: 0.12),
+                    // color: (read ? Colors.grey : Theme.of(context).primaryColor).withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(14),
                   ),
                   child: Icon(

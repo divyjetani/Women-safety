@@ -1,9 +1,11 @@
-// widgets/custom_bottom_navbar.dart - Simpler version
+// lib/idgets/custom_bottom_navbar.dart
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 import 'sos_popup.dart';
 
 class CustomBottomNavBar extends StatelessWidget {
+  final bool incognito;
+  final String groupId;
   final int currentIndex;
   final Function(int) onTap;
   final bool isEmergencyActive;
@@ -13,6 +15,8 @@ class CustomBottomNavBar extends StatelessWidget {
     required this.currentIndex,
     required this.onTap,
     required this.isEmergencyActive,
+    required this.incognito,
+    this.groupId = "bubble",
   });
 
   @override
@@ -139,7 +143,10 @@ class CustomBottomNavBar extends StatelessWidget {
     showDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => const SOSPopup(),
+      builder: (context) => SOSPopup(
+        incognito: incognito,
+        groupId: groupId,
+      ),
     );
   }
 }

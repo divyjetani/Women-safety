@@ -37,6 +37,8 @@ class _MainScreenState extends State<MainScreen> {
       ProfileScreen(userId: currUserId),
     ];
 
+    bool _incognito = false;
+
     return Scaffold(
       body: _screens[_selectedIndex],
       bottomNavigationBar: Container(
@@ -49,6 +51,8 @@ class _MainScreenState extends State<MainScreen> {
             });
           },
           isEmergencyActive: _isEmergencyActive,
+          incognito: _incognito,
+          groupId: "bubble",
         ),
       ),
     );

@@ -1,4 +1,4 @@
-// app/auth_provider.dart
+// lib/app/auth_provider.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';

@@ -601,7 +601,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             onChanged: (v) => themeProvider.toggleTheme(v),
           ),
 
-          const SizedBox(height: 10),
+          // const SizedBox(height: 10),
 
           _OptionRow(
             icon: Icons.security_rounded,
@@ -950,7 +950,7 @@ class _SwitchRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
+              // color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: Theme.of(context).primaryColor, size: 20),
@@ -1003,7 +1003,7 @@ class _OptionRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
+                // color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: Theme.of(context).primaryColor, size: 20),

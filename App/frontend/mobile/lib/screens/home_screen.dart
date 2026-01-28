@@ -1,8 +1,10 @@
 // screens/home_screen.dart
 import 'dart:async';
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile/screens/notifications_screen.dart';
 import 'package:mobile/screens/settings_screen.dart';
+import 'package:mobile/widgets/ask_ai_bar.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -55,9 +57,18 @@ class _HomeScreenState extends State<HomeScreen> {
   String _email = "Loading...";
   int _userId = 0;
 
+  final _appLinks = AppLinks();
+
   @override
   void initState() {
     super.initState();
+
+    _appLinks.uriLinkStream.listen((uri) {
+      if (uri != null && uri.host == 'join') {
+        final token = uri.pathSegments.first;
+        ApiService.joinBubble(token);
+      }
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _authGuard();
@@ -508,7 +519,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildHeader(context),
                 const SizedBox(height: 12),
 
-                // ✅ CTA ALWAYS visible
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: AskAIBar(
+                    userId: _userId,
+                    username: _username,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // ✅ CTA buttons visible
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _buildTopCTAs(context),
@@ -855,7 +875,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  // color: color.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: color, size: 24),
@@ -959,7 +979,7 @@ class _HomeScreenState extends State<HomeScreen> {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              // color: color.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 18),
@@ -1038,7 +1058,6 @@ class _TopCTAButton extends StatelessWidget {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: color, size: 22),

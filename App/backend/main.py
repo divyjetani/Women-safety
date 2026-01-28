@@ -1,13 +1,27 @@
+# uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import UploadFile, File, Form
 import os
 from pathlib import Path
 import shutil
 import json
+from google import genai
+from uuid import uuid4
+
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyBj0oIAl_dY17Xu2f9X04AwO5AmCg1GAjQ") # from main gmail acc
+gemini_model = "gemini-2.5-flash"
+
+client = genai.Client(api_key=GEMINI_API_KEY)
+
+class AskAIRequest(BaseModel):
+    user_id: int
+    question: str
+    detailed: bool = False
 
 UPLOAD_DIR = "uploads/recordings"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -34,17 +48,14 @@ class User(BaseModel):
     emergency_contacts: List[str] = []
     is_premium: bool = False
 
-
 class LoginRequest(BaseModel):
     phone: str
-
 
 class SOSRequest(BaseModel):
     user_id: int
     location: str
     message: Optional[str] = None
     timestamp: datetime = datetime.now()
-
 
 class ThreatReport(BaseModel):
     id: int
@@ -54,22 +65,26 @@ class ThreatReport(BaseModel):
     timestamp: datetime
     reported_by: int
 
-
 # Profile APIs Models
 class UpdateProfile(BaseModel):
     name: str
     email: str
 
-
 class UpdateSettings(BaseModel):
     notifications: bool
     locationSharing: bool
-
 
 class AddContact(BaseModel):
     name: str
     phone: str
     isPrimary: bool = False
+class CreateBubbleReq(BaseModel):
+    name: str
+    icon: int
+    color: int
+    
+BUBBLES = {}       # group_id -> group
+INVITES = {}       # token -> group_id
 
 
 # ============================================================
@@ -243,6 +258,112 @@ def login(request: LoginRequest):
             }
     raise HTTPException(status_code=404, detail="User not found")
 
+class AskAIRequest(BaseModel):
+    user_id: int
+    question: str
+    detailed: bool = False
+
+@app.post("/bubble/create")
+def create_bubble(req: CreateBubbleReq):
+    group_id = str(uuid4())
+    invite_token = str(uuid4())
+
+    bubble = {
+        "id": group_id,
+        "name": req.name,
+        "icon": req.icon,
+        "color": req.color,
+        "members": [],
+    }
+
+    BUBBLES[group_id] = bubble
+    INVITES[invite_token] = group_id
+
+    return {
+        "group": bubble,
+        "invite_link": f"safebubble://join/{invite_token}"
+    }
+    
+@app.post("/bubble/join/{token}")
+def join_bubble(token: str, user_id: str):
+    if token not in INVITES:
+        return {"error": "Invalid invite"}
+
+    group_id = INVITES[token]
+    bubble = BUBBLES[group_id]
+
+    bubble["members"].append(user_id)
+
+    return bubble
+
+
+
+@app.post("/ai/ask")
+def ask_ai(req: AskAIRequest):
+    try:
+        if not req.question.strip():
+            raise HTTPException(status_code=400, detail="Question cannot be empty")
+
+        if req.detailed:
+            prompt = f"""
+You are a helpful safety assistant for a women safety app.
+Answer the user question in a detailed way with headings + steps.
+
+User Question: {req.question}
+
+Rules:
+- Keep it helpful, safe and clear.
+- Use bullet points if needed.
+- Give practical steps.
+- If user asks anything else except women safety please say, you can't do it, you will only answer for women safety
+- do use md file syntax
+- max 20 Lines
+"""
+        else:
+            prompt = f"""
+You are a helpful safety assistant for a women safety app.
+Answer the user question in a short response (max 3 lines).
+User Question: {req.question}
+
+Rules:
+- Max 3 lines.
+- Simple and actionable.
+- If user asks anything else except women safety please say, you can't do it, you will only answer for women safety
+"""
+
+        response = client.models.generate_content(
+            model=gemini_model,
+            contents=prompt
+        )
+        text = (response.text or "").strip()
+
+        # ✅ Generate tips (simple logic / can be AI too)
+        tips = []
+        low = req.question.lower()
+        if "sos" in low:
+            tips = ["Use SOS quickly", "Share live location", "Keep emergency contacts updated"]
+        elif "night" in low or "safe" in low:
+            tips = ["Stay in well-lit areas", "Avoid shortcuts", "Keep phone charged"]
+        else:
+            tips = ["Stay alert", "Share location", "Trust your instincts"]
+
+        if req.detailed:
+            return {
+                "success": True,
+                "short_answer": "",
+                "detailed_answer": text,
+                "tips": tips
+            }
+
+        return {
+            "success": True,
+            "short_answer": text,
+            "detailed_answer": "",
+            "tips": tips
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
 
 @app.get("/users/{user_id}")
 def get_user(user_id: int):
@@ -488,11 +609,9 @@ def get_guardians(user_id: int = Query(...)):
 def get_history(user_id: int = Query(...)):
     return HISTORY_DB.get(user_id, [])
 
-
 @app.get("/help/faqs")
 def get_faqs():
     return FAQS_DB
-
 
 # ============================================================
 # ✅ PROFILE APIs (same as you had, improved)
@@ -510,7 +629,6 @@ def get_profile(user_id: int):
         }
     return PROFILE_DB[user_id]
 
-
 @app.put("/profile/{user_id}")
 def update_profile(user_id: int, body: UpdateProfile):
     if user_id not in PROFILE_DB:
@@ -519,7 +637,6 @@ def update_profile(user_id: int, body: UpdateProfile):
     PROFILE_DB[user_id]["name"] = body.name
     PROFILE_DB[user_id]["email"] = body.email
     return {"success": True, "message": "Profile updated successfully"}
-
 
 @app.put("/profile/{user_id}/settings")
 def update_settings(user_id: int, body: UpdateSettings):
@@ -530,11 +647,9 @@ def update_settings(user_id: int, body: UpdateSettings):
     PROFILE_DB[user_id]["settings"]["locationSharing"] = body.locationSharing
     return {"success": True, "message": "Settings updated successfully"}
 
-
 @app.get("/profile/{user_id}/emergency-contacts")
 def get_contacts(user_id: int):
     return {"contacts": CONTACTS_DB.get(user_id, [])}
-
 
 @app.post("/profile/{user_id}/emergency-contacts")
 def add_contact(user_id: int, body: AddContact):
@@ -558,19 +673,16 @@ def add_contact(user_id: int, body: AddContact):
     CONTACTS_DB[user_id].append(new_contact)
     return {"success": True, "contact": new_contact}
 
-
 @app.delete("/profile/{user_id}/emergency-contacts/{contact_id}")
 def delete_contact(user_id: int, contact_id: int):
     CONTACTS_DB[user_id] = [c for c in CONTACTS_DB.get(user_id, []) if c["id"] != contact_id]
     return {"success": True, "message": "Contact deleted"}
-
 
 @app.put("/profile/{user_id}/emergency-contacts/{contact_id}/primary")
 def set_primary(user_id: int, contact_id: int):
     for c in CONTACTS_DB.get(user_id, []):
         c["isPrimary"] = (c["id"] == contact_id)
     return {"success": True, "message": "Primary contact updated"}
-
 
 # ============================================================
 # NOTIFICATIONS
@@ -589,7 +701,6 @@ def mark_read(user_id: int, notification_id: int):
             break
     return {"success": True, "message": "Notification marked as read"}
 
-
 # ============================================================
 # Legacy endpoints (kept for backward compatibility)
 # ============================================================
@@ -605,7 +716,6 @@ def get_safety_stats_old(user_id: int):
         "sos_used": 0,
     }
 
-
 @app.get("/recent-activity/{user_id}")
 def get_recent_activity_old(user_id: int):
     return [
@@ -613,7 +723,6 @@ def get_recent_activity_old(user_id: int):
         {"id": 2, "type": "alert", "location": "Park Street", "time": "4 hours ago"},
         {"id": 3, "type": "checkin", "location": "Home", "time": "6 hours ago"},
     ]
-
 
 # ============================================================
 # Analytics (your old analytics page endpoints)
@@ -682,7 +791,6 @@ def analytics_overview():
         ],
     }
 
-
 @app.get("/analytics/stats/{stat_id}")
 def stat_detail(stat_id: str):
     mapping = {
@@ -737,8 +845,184 @@ def stat_detail(stat_id: str):
         },
     )
 
+# ----------------------------
+# Models
+# ----------------------------
+
+class CreateGroupReq(BaseModel):
+    name: str = Field(min_length=2, max_length=30)
+
+class AddMemberReq(BaseModel):
+    name: str = Field(min_length=2, max_length=40)
+    phone: str = Field(min_length=8, max_length=15)
+
+class ShareReq(BaseModel):
+    user_id: str
+    lat: float
+    lng: float
+    battery: int = Field(ge=0, le=100)
+    incognito: bool = False
+
+class SOSReq(BaseModel):
+    user_id: str
+    lat: float
+    lng: float
+    battery: int = Field(ge=0, le=100)
+    message: str = "SOS! Need help immediately!"
+
+# ----------------------------
+# In-memory DB (dummy)
+# ----------------------------
+
+# groups: groupId -> group data
+GROUPS: Dict[str, dict] = {}
+
+# shares: groupId -> latest share per userId
+LATEST_SHARES: Dict[str, Dict[str, dict]] = {}
+
+# sos: groupId -> list of sos events
+SOS_EVENTS: Dict[str, List[dict]] = {}
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+def seed_bubble_group():
+    """
+    Seed your group: bubble
+    """
+    bubble_id = "bubble"  # ✅ stable group id as "bubble"
+    GROUPS[bubble_id] = {
+        "id": bubble_id,
+        "name": "bubble",
+        "members": [
+            {"id": "m1", "name": "Mom", "phone": "+91XXXXXXXXXX"},
+            {"id": "m2", "name": "Dad", "phone": "+91XXXXXXXXXX"},
+        ],
+        "created_at": now_iso()
+    }
+    LATEST_SHARES[bubble_id] = {}
+    SOS_EVENTS[bubble_id] = []
+
+seed_bubble_group()
+
+# ----------------------------
+# APIs
+# ----------------------------
+
+@app.get("/")
+def home():
+    return {"status": "ok", "message": "Safety Group API running"}
+
+@app.get("/groups")
+def list_groups():
+    return {"groups": list(GROUPS.values())}
+
+@app.post("/groups")
+def create_group(body: CreateGroupReq):
+    group_id = body.name.strip().lower()  # simple id
+    if group_id in GROUPS:
+        raise HTTPException(status_code=409, detail="Group already exists")
+
+    GROUPS[group_id] = {
+        "id": group_id,
+        "name": body.name.strip(),
+        "members": [],
+        "created_at": now_iso()
+    }
+    LATEST_SHARES[group_id] = {}
+    SOS_EVENTS[group_id] = []
+
+    return {"message": "Group created", "group": GROUPS[group_id]}
+
+@app.post("/groups/{group_id}/members")
+def add_member(group_id: str, body: AddMemberReq):
+    if group_id not in GROUPS:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    member = {
+        "id": str(uuid.uuid4())[:8],
+        "name": body.name.strip(),
+        "phone": body.phone.strip()
+    }
+    GROUPS[group_id]["members"].append(member)
+    return {"message": "Member added", "member": member, "group": GROUPS[group_id]}
+
+@app.post("/groups/{group_id}/share")
+def share_location(group_id: str, body: ShareReq):
+    """
+    This is called every few seconds from Flutter
+    - If incognito == True => we accept but DO NOT save location
+    - If incognito == False => save latest share for that user
+    """
+    if group_id not in GROUPS:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if body.incognito:
+        return {
+            "message": "Incognito ON - share ignored",
+            "group_id": group_id,
+            "saved": False
+        }
+
+    LATEST_SHARES[group_id][body.user_id] = {
+        "user_id": body.user_id,
+        "lat": body.lat,
+        "lng": body.lng,
+        "battery": body.battery,
+        "updated_at": now_iso(),
+    }
+
+    return {
+        "message": "Shared successfully",
+        "group_id": group_id,
+        "saved": True,
+        "data": LATEST_SHARES[group_id][body.user_id]
+    }
+
+@app.get("/groups/{group_id}/latest")
+def get_latest_shares(group_id: str):
+    if group_id not in GROUPS:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    return {
+        "group_id": group_id,
+        "latest": list(LATEST_SHARES[group_id].values())
+    }
+
+@app.post("/groups/{group_id}/sos")
+def send_sos(group_id: str, body: SOSReq):
+    """
+    Send SOS alert to all members of group.
+    Right now we store event in-memory (dummy).
+    Later you will send Firebase push to each member.
+    """
+    if group_id not in GROUPS:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    event = {
+        "id": str(uuid.uuid4()),
+        "group_id": group_id,
+        "user_id": body.user_id,
+        "lat": body.lat,
+        "lng": body.lng,
+        "battery": body.battery,
+        "message": body.message,
+        "created_at": now_iso(),
+        "notified_members": GROUPS[group_id]["members"],  # dummy
+    }
+
+    SOS_EVENTS[group_id].append(event)
+
+    return {"message": "SOS triggered", "event": event}
+
+@app.get("/groups/{group_id}/sos")
+def list_sos(group_id: str):
+    if group_id not in GROUPS:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return {"group_id": group_id, "events": SOS_EVENTS[group_id]}
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# uvicorn main:app --reload --host 0.0.0.0 --port 800

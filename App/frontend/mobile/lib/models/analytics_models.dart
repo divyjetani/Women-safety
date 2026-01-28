@@ -1,3 +1,4 @@
+// lib/models/analytics_models.dart
 class AnalyticsResponse {
   final List<WeeklyTrendPoint> weeklyTrends;
   final List<StatCardData> stats;

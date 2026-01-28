@@ -1,15 +1,29 @@
-// widgets/sos_popup.dart - Updated with fixed imports and access
+// lib/widgets/sos_popup.dart
+
+import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // ADD THIS
+
 import '../app/auth_provider.dart';
-import '../services/api_service.dart';
-import '../services/sos_notification_service.dart';
-import '../services/firebase_service.dart';
 import '../app/theme.dart';
+import '../network/bubble_api.dart';
+import '../services/firebase_service.dart';
+import '../services/sos_notification_service.dart';
 
 class SOSPopup extends StatefulWidget {
-  const SOSPopup({super.key});
+  /// ✅ pass incognito from your map screen / state
+  final bool incognito;
+
+  /// ✅ group id = bubble
+  final String groupId;
+
+  const SOSPopup({
+    super.key,
+    required this.incognito,
+    this.groupId = "bubble",
+  });
 
   @override
   State<SOSPopup> createState() => _SOSPopupState();
@@ -20,66 +34,100 @@ class _SOSPopupState extends State<SOSPopup> {
   String _status = '';
   bool _success = false;
 
-  // Create local instance
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
   FlutterLocalNotificationsPlugin();
 
-  Future<void> _sendSOS() async {
+  Future<void> _sendSOS({
+    required bool incognito,
+    required String groupId,
+  }) async {
+    if (_isSending) return;
+
     setState(() {
       _isSending = true;
       _status = 'Sending emergency alert...';
+      _success = false;
     });
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final user = authProvider.currentUser;
 
-      if (user != null) {
-        // First, show local notification immediately for user feedback
-        await _showLocalNotification(user.username, 'Current Location');
-
-        setState(() {
-          _status = 'Sending notifications to emergency contacts...';
-        });
-
-        // Send notifications to emergency contacts
-        await _sendEmergencyNotifications(user.username, 'Current Location');
-
-        // Then send SOS to backend (this can be async)
-        try {
-          await ApiService.sendSOS(
-            userId: user.id,
-            location: 'Current Location (GPS)',
-            message: 'Emergency SOS activated by user',
-          );
-        } catch (e) {
-          // Even if backend fails, notifications are already sent
-          print('Backend SOS failed but notifications sent: $e');
-        }
-
-        setState(() {
-          _success = true;
-          _status = '✅ Emergency alert sent successfully!\n'
-              'Your emergency contacts have been notified.\n'
-              'Stay calm and wait for help.';
-        });
-
-        // Close popup after 4 seconds
-        await Future.delayed(const Duration(seconds: 4));
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-      } else {
+      if (user == null) {
         throw Exception('User not logged in');
       }
+
+      // ✅ STEP 1: show local notification immediately
+      await _showLocalNotification(user.username, 'Sending SOS...');
+
+      if (!mounted) return;
+      setState(() {
+        _status = 'Sending notifications to emergency contacts...';
+      });
+
+      // ✅ STEP 2: emergency contacts notification
+      await _sendEmergencyNotifications(user.username, 'Current Location');
+
+      // ✅ STEP 3: If incognito ON => stop group SOS
+      if (incognito) {
+        if (!mounted) return;
+        setState(() {
+          _success = true;
+          _status = '✅ Emergency contacts notified!\n'
+              'Incognito mode is ON, so group SOS was not sent.\n'
+              'Stay safe ❤️';
+        });
+
+        await Future.delayed(const Duration(seconds: 4));
+        if (mounted) Navigator.of(context).pop();
+        return;
+      }
+
+      // ✅ STEP 4: call backend bubble SOS using Dio (FastAPI)
+      if (!mounted) return;
+      setState(() {
+        _status = 'Alerting your Bubble group members...';
+      });
+
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+
+        final battery = await Battery().batteryLevel;
+
+        await BubbleApi.sendSosToBubble(
+          userId: user.id.toString(),
+          username: user.username,
+          lat: position.latitude,
+          lng: position.longitude,
+          battery: battery,
+          groupId: groupId,
+        );
+      } catch (e) {
+        debugPrint("Bubble SOS backend failed: $e");
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _success = true;
+        _status = '✅ Emergency alert sent successfully!\n'
+            'Bubble group + emergency contacts notified.\n'
+            'Stay calm and wait for help.';
+      });
+
+      await Future.delayed(const Duration(seconds: 4));
+      if (mounted) Navigator.of(context).pop();
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _success = false;
-        _status = '❌ Failed to send alert. Please try again.\n'
-            'Make sure you have internet connection.';
-        print('SOS Error: $e');
+        _status =
+        '❌ Failed to send alert. Please try again.\nMake sure you have internet connection.';
       });
+      debugPrint('SOS Error: $e');
     } finally {
+      if (!mounted) return;
       if (!_success) {
         setState(() => _isSending = false);
       }
@@ -88,60 +136,52 @@ class _SOSPopupState extends State<SOSPopup> {
 
   Future<void> _sendEmergencyNotifications(String userName, String location) async {
     try {
-      print('🔄 Getting emergency contact tokens...');
+      debugPrint('🔄 Getting emergency contact tokens...');
 
-      // Get actual emergency contact tokens
       final tokens = await _getActualEmergencyContactTokens();
 
       if (tokens.isEmpty) {
-        print('⚠️ No emergency contacts found, using test mode');
+        debugPrint('⚠️ No emergency contacts found, using test mode');
 
-        // Fallback: Use current user's token for testing
         final currentToken = await FirebaseNotificationService.getFCMToken();
         if (currentToken != null) {
-          print('📱 Using own device for testing: ${currentToken.substring(0, 20)}...');
+          debugPrint('📱 Using own device for testing');
           await SOSNotificationService.sendEmergencyNotification(
             userName: userName,
             location: location,
             fcmTokens: [currentToken],
           );
-        } else {
-          print('⚠️ No FCM token available');
         }
         return;
       }
 
-      print('📱 Sending to ${tokens.length} emergency contact(s)');
+      debugPrint('📱 Sending to ${tokens.length} emergency contact(s)');
 
-      // Send notifications
       await SOSNotificationService.sendEmergencyNotification(
         userName: userName,
         location: location,
         fcmTokens: tokens,
       );
 
-      print('✅ Emergency notifications sent');
-
+      debugPrint('✅ Emergency notifications sent');
     } catch (e) {
-      print('❌ Error sending notifications: $e');
-      // Don't throw - we still want to show success to the user
+      debugPrint('❌ Error sending notifications: $e');
     }
   }
 
   Future<List<String>> _getActualEmergencyContactTokens() async {
-    // TODO: Implement based on your app's data structure
-
-    // For now, return empty list - will trigger fallback to test mode
+    // TODO: connect to your DB (members list -> fcm tokens)
     return [];
   }
 
   Future<void> _showLocalNotification(String userName, String location) async {
     try {
-      // Initialize notifications plugin if needed
       const AndroidInitializationSettings initializationSettingsAndroid =
       AndroidInitializationSettings('@mipmap/ic_launcher');
+
       const DarwinInitializationSettings initializationSettingsIOS =
       DarwinInitializationSettings();
+
       const InitializationSettings initializationSettings = InitializationSettings(
         android: initializationSettingsAndroid,
         iOS: initializationSettingsIOS,
@@ -149,7 +189,7 @@ class _SOSPopupState extends State<SOSPopup> {
 
       await _localNotificationsPlugin.initialize(initializationSettings);
 
-      // Create notification channel for Android
+      // ✅ Android channel
       const AndroidNotificationChannel channel = AndroidNotificationChannel(
         'emergency_channel',
         'Emergency Alerts',
@@ -158,14 +198,14 @@ class _SOSPopupState extends State<SOSPopup> {
       );
 
       await _localNotificationsPlugin
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
           ?.createNotificationChannel(channel);
 
-      // Show immediate notification on the user's own device
       await _localNotificationsPlugin.show(
-        999, // High ID for emergency
+        999,
         'SOS Activated 🚨',
-        'Emergency alert sent to your contacts from $location',
+        'Emergency alert sent to your contacts',
         const NotificationDetails(
           android: AndroidNotificationDetails(
             'emergency_channel',
@@ -173,32 +213,30 @@ class _SOSPopupState extends State<SOSPopup> {
             channelDescription: 'Emergency SOS notifications',
             importance: Importance.max,
             priority: Priority.high,
-            color: Colors.red,
             enableVibration: true,
             playSound: true,
-            ledColor: Colors.red,
-            ledOnMs: 1000,
-            ledOffMs: 500,
           ),
           iOS: DarwinNotificationDetails(
             presentAlert: true,
             presentBadge: true,
             presentSound: true,
-            sound: 'default',
-            badgeNumber: 1,
           ),
         ),
         payload: 'sos_activated',
       );
-
-      print('📱 Local SOS notification shown');
     } catch (e) {
-      print('Error showing local notification: $e');
+      debugPrint('Error showing local notification: $e');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final statusColor = _success
+        ? Colors.green
+        : _isSending
+        ? Colors.orange
+        : Colors.red;
+
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.all(20),
@@ -219,12 +257,10 @@ class _SOSPopupState extends State<SOSPopup> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // SOS Icon with pulsing animation when sending
               _buildSOSIcon(),
 
               const SizedBox(height: 20),
 
-              // Title
               Text(
                 _success ? 'Emergency Alert Sent!' : 'Emergency SOS',
                 style: TextStyle(
@@ -236,10 +272,9 @@ class _SOSPopupState extends State<SOSPopup> {
 
               const SizedBox(height: 12),
 
-              // Description
               Text(
                 _success
-                    ? 'Help is on the way! Notifications sent to emergency contacts.'
+                    ? 'Help is on the way! Notifications sent successfully.'
                     : 'This will notify your emergency contacts immediately.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -248,58 +283,53 @@ class _SOSPopupState extends State<SOSPopup> {
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 18),
 
-              // Status message
               if (_status.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _success ? Colors.green[50] : Colors.red[50],
+                    color: statusColor.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: _success ? Colors.green[200] ?? Colors.green : Colors.red[200] ?? Colors.red,
-                    ),
+                    border: Border.all(color: statusColor.withOpacity(0.35)),
                   ),
                   child: Text(
                     _status,
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      color: _success ? Colors.green[800] : Colors.red[800],
+                      color: statusColor,
                       fontSize: 14,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
 
               const SizedBox(height: 20),
 
-              // Notification preview
               if (!_isSending && !_success)
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.orange[50],
+                    color: Colors.orange.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange[200] ?? Colors.orangeAccent),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
                   ),
                   child: Column(
-                    children: [
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
                       Row(
                         children: [
-                          Icon(Icons.notifications_active, color: Colors.orange[700], size: 16),
-                          const SizedBox(width: 8),
+                          Icon(Icons.notifications_active, size: 16),
+                          SizedBox(width: 8),
                           Text(
-                            'Immediate notifications will be \nsent to:',
-                            style: TextStyle(
-                              color: Colors.orange[700],
-                              fontWeight: FontWeight.bold,
-                            ),
+                            'Will notify:',
+                            style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '• Your emergency contacts\n• Your device for confirmation\n• Police if connected to backend',
+                      SizedBox(height: 8),
+                      Text(
+                        '• Emergency contacts\n• Bubble group members\n• Your phone for confirmation',
                         style: TextStyle(fontSize: 12),
                       ),
                     ],
@@ -308,35 +338,6 @@ class _SOSPopupState extends State<SOSPopup> {
 
               const SizedBox(height: 20),
 
-              // Warning for test mode
-              if (!_isSending && !_success)
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.blue[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue[200] ?? Colors.blue),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info, color: Colors.blue[700], size: 14),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'In test mode: Sending to your own device',
-                          style: TextStyle(
-                            color: Colors.blue[700],
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-              const SizedBox(height: 20),
-
-              // Buttons
               _buildActionButtons(),
             ],
           ),
@@ -349,16 +350,6 @@ class _SOSPopupState extends State<SOSPopup> {
     return Stack(
       alignment: Alignment.center,
       children: [
-        if (_isSending && !_success)
-          Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.red.withOpacity(0.2),
-            ),
-          ),
-
         Container(
           width: 80,
           height: 80,
@@ -385,15 +376,11 @@ class _SOSPopupState extends State<SOSPopup> {
             size: 40,
           ),
         ),
-
         if (_isSending && !_success)
-          SizedBox(
+          const SizedBox(
             width: 100,
             height: 100,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation(Colors.red.withOpacity(0.8)),
-            ),
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
       ],
     );
@@ -422,9 +409,6 @@ class _SOSPopupState extends State<SOSPopup> {
             onPressed: _isSending ? null : () => Navigator.of(context).pop(),
             style: OutlinedButton.styleFrom(
               foregroundColor: Theme.of(context).textTheme.bodyLarge!.color,
-              side: BorderSide(
-                color: Theme.of(context).textTheme.bodyMedium!.color!.withOpacity(0.3),
-              ),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -436,7 +420,13 @@ class _SOSPopupState extends State<SOSPopup> {
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton(
-            onPressed: _isSending ? null : _sendSOS,
+            // ✅ FIXED: wrap inside function
+            onPressed: _isSending
+                ? null
+                : () => _sendSOS(
+              incognito: widget.incognito,
+              groupId: widget.groupId,
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
               foregroundColor: Colors.white,
@@ -455,12 +445,7 @@ class _SOSPopupState extends State<SOSPopup> {
                 valueColor: AlwaysStoppedAnimation(Colors.white),
               ),
             )
-                : const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('SEND SOS'),
-              ],
-            ),
+                : const Text('SEND SOS'),
           ),
         ),
       ],

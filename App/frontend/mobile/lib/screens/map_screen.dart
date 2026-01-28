@@ -1,12 +1,23 @@
-import 'dart:convert';
+// lib/screens/map_screen.dart
+import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:flutter_map_heatmap/flutter_map_heatmap.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
+import 'package:mobile/services/api_service.dart';
+import 'package:mobile/services/group_storage.dart';
+import 'package:mobile/widgets/bubble_info_sheet.dart';
+import 'package:mobile/widgets/create_bubble_dialog.dart';
+import 'package:mobile/widgets/map_search_bar.dart';
+import 'package:share_plus/share_plus.dart';
 
-import '../app/theme.dart';
+import '../models/bubble_model.dart';
+import '../services/location_storage.dart';
+import '../services/share_service.dart';
+import '../widgets/map_group_strip_left.dart';
+import '../widgets/map_incognito_strip_right.dart';
+import '../widgets/group_bubble_bar.dart';
+
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -16,72 +27,115 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  final MapController _mapController = MapController();
-
-  final TextEditingController _searchController = TextEditingController();
-  final FocusNode _searchFocus = FocusNode();
-
-  bool _isFullScreen = false;
-  bool _loadingLocation = true;
+  GoogleMapController? _controller;
+  Set<Marker> _markers = {};
 
   LatLng? _myLocation;
-  double _currentZoom = 13;
+  double _zoom = 15;
+  bool _loadingLocation = true;
 
-  String _currentAreaName = "Fetching area...";
+  // map modes
+  MapType _mapType = MapType.normal;
 
-  List<Map<String, dynamic>> _suggestions = [];
+  // incognito
+  bool _incognito = false;
 
-  // Dummy heatmap points
-  final List<WeightedLatLng> heatPoints = [
-    // 🔴 Risk
-    WeightedLatLng(const LatLng(23.0145, 72.3307), 6),
-    WeightedLatLng(const LatLng(23.6132, 72.2300), 5),
-    WeightedLatLng(const LatLng(23.6125, 72.2288), 6),
+  // groups
+  late List<SafetyGroup> _groups;
+  late SafetyGroup _currentGroup;
 
-    // 🟠 Alert
-    WeightedLatLng(const LatLng(23.6152, 72.2182), 3),
-    WeightedLatLng(const LatLng(23.6158, 72.2190), 4),
-    WeightedLatLng(const LatLng(23.6148, 72.2176), 3),
+  // share service
+  final ShareService _shareService = ShareService();
 
-    // 🟢 Safe
-    WeightedLatLng(const LatLng(23.6102, 72.2150), 1),
-    WeightedLatLng(const LatLng(23.6098, 72.2140), 1),
-  ];
+  // for sharing periodically
+  Timer? _shareTimer;
 
-  final LatLng _defaultCenter = const LatLng(28.6139, 77.2090); // fallback
+  // default fallback if no last location
+  final LatLng _defaultCenter = const LatLng(28.6139, 77.2090); // Delhi
 
   @override
   void initState() {
     super.initState();
 
-    // ✅ Auto-fetch on opening page
-    _initLocationOnOpen();
+    _groups = [
+      SafetyGroup(
+        id: "1",
+        name: "Family",
+        members: [
+          GroupMember(
+            id: "u1",
+            name: "Divy",
+            lat: 28.6145,
+            lng: 77.2098,
+          ),
+          GroupMember(
+            id: "u2",
+            name: "Mom",
+            lat: 28.6129,
+            lng: 77.2080,
+          ),
+        ],
+      ),
+    ];
+    _currentGroup = _groups.first;
 
-    // ✅ Search suggestions when typing
-    _searchController.addListener(() {
-      final q = _searchController.text.trim();
-      if (q.length < 3) {
-        setState(() => _suggestions = []);
-        return;
-      }
-      _fetchSuggestions(q);
-    });
+    _initOnOpen();
   }
 
   @override
   void dispose() {
-    _searchController.dispose();
-    _searchFocus.dispose();
+    _shareTimer?.cancel();
     super.dispose();
   }
 
-  // ✅ Auto init
-  Future<void> _initLocationOnOpen() async {
+  Future<void> _initOnOpen() async {
+    final storedGroups = await GroupStorage.loadGroups();
+
+    if (storedGroups.isNotEmpty) {
+      final selectedId = await GroupStorage.loadSelectedGroup();
+
+      setState(() {
+        _groups = storedGroups;
+        _currentGroup = selectedId != null
+            ? storedGroups.firstWhere(
+              (g) => g.id == selectedId,
+          orElse: () => storedGroups.first,
+        )
+            : storedGroups.first;
+      });
+    }
+
+    // ✅ move map to last location immediately
+    final last = await LocationStorage.getLastLocation();
+    if (last != null) {
+      setState(() => _myLocation = LatLng(last["lat"]!, last["lng"]!));
+    }
+
+    // ✅ now try real location
     await _goToMyLocation(showSnackOnFail: false);
+
     setState(() => _loadingLocation = false);
+
+    // ✅ start sharing loop (every 7 sec)
+    _startSharingLoop();
+    await _updateMarkers();
   }
 
-  // ✅ My Location button + auto fetch
+  void _startSharingLoop() {
+    _shareTimer?.cancel();
+    _shareTimer = Timer.periodic(const Duration(seconds: 7), (_) async {
+      final loc = _myLocation;
+      if (loc == null) return;
+
+      await _shareService.shareToGroup(
+        incognito: _incognito,
+        groupId: _currentGroup.id,
+        lat: loc.latitude,
+        lng: loc.longitude,
+      );
+    });
+  }
+
   Future<void> _goToMyLocation({bool showSnackOnFail = true}) async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -108,450 +162,431 @@ class _MapScreenState extends State<MapScreen> {
         return;
       }
 
-      final Position pos = await Geolocator.getCurrentPosition(
+      final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
 
-      final LatLng live = LatLng(pos.latitude, pos.longitude);
+      final live = LatLng(pos.latitude, pos.longitude);
 
       setState(() {
         _myLocation = live;
-        _currentZoom = 16;
+        _zoom = 16;
       });
+      await _updateMarkers();
 
-      _mapController.move(live, _currentZoom);
+      await LocationStorage.saveLastLocation(live.latitude, live.longitude);
 
-      // ✅ Reverse geocode to area name
-      final area = await _reverseGeocode(live.latitude, live.longitude);
-      if (area != null) {
-        setState(() => _currentAreaName = area);
-      } else {
-        setState(() => _currentAreaName = "Unknown area");
-      }
+      _controller?.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(target: live, zoom: _zoom),
+        ),
+      );
     } catch (e) {
       if (showSnackOnFail) _showSnack("Error getting location: $e");
     }
   }
 
-  // ✅ Reverse geocoding using Nominatim
-  Future<String?> _reverseGeocode(double lat, double lon) async {
-    try {
-      final url =
-          "https://nominatim.openstreetmap.org/reverse?format=json&lat=$lat&lon=$lon";
+  Future<void> _updateMarkers() async {
+    final Set<Marker> newMarkers = {};
 
-      final res = await http.get(
-        Uri.parse(url),
-        headers: {
-          // ✅ Required by Nominatim policy
-          "User-Agent": "safety-app/1.0 (contact: your@email.com)"
-        },
+    // 🔵 My location
+    if (_myLocation != null) {
+      final myIcon = await _letterMarker(
+        "D", // first letter of logged-in user
+        Colors.blue,
       );
 
-      if (res.statusCode != 200) return null;
-
-      final data = jsonDecode(res.body);
-      final address = data["address"];
-
-      // take best readable name
-      final String area =
-          address["suburb"] ??
-              address["neighbourhood"] ??
-              address["city"] ??
-              address["town"] ??
-              address["village"] ??
-              data["display_name"];
-
-      return area.toString();
-    } catch (_) {
-      return null;
+      newMarkers.add(
+        Marker(
+          markerId: const MarkerId("me"),
+          position: _myLocation!,
+          icon: myIcon,
+        ),
+      );
     }
-  }
 
-  // ✅ Suggestions (Search)
-  Future<void> _fetchSuggestions(String query) async {
-    try {
-      final url =
-          "https://nominatim.openstreetmap.org/search?format=json&q=${Uri.encodeComponent(query)}&addressdetails=1&limit=6";
-
-      final res = await http.get(
-        Uri.parse(url),
-        headers: {
-          "User-Agent": "safety-app/1.0 (contact: your@email.com)",
-        },
+    // 🟢 Bubble members
+    for (final m in _currentGroup.members) {
+      final icon = await _letterMarker(
+        m.name[0].toUpperCase(),
+        Colors.green,
       );
 
-      if (res.statusCode != 200) return;
-
-      final List list = jsonDecode(res.body);
-
-      setState(() {
-        _suggestions = list.map((e) {
-          return {
-            "name": e["display_name"],
-            "lat": double.parse(e["lat"]),
-            "lon": double.parse(e["lon"]),
-          };
-        }).toList();
-      });
-    } catch (_) {
-      // ignore
+      newMarkers.add(
+        Marker(
+          markerId: MarkerId(m.id),
+          position: LatLng(m.lat, m.lng),
+          icon: icon,
+        ),
+      );
     }
-  }
-
-  void _onSuggestionTap(Map<String, dynamic> place) {
-    final LatLng target = LatLng(place["lat"], place["lon"]);
 
     setState(() {
-      _currentAreaName = place["name"];
-      _suggestions = [];
+      _markers = newMarkers;
     });
-
-    _searchFocus.unfocus();
-    _mapController.move(target, 15);
   }
 
-  void _zoomIn() {
-    setState(() => _currentZoom += 1);
-    _mapController.move(_mapController.camera.center, _currentZoom);
+
+  /// ✅ North direction button (bearing reset)
+  void _resetToNorth() {
+    final target = _myLocation ?? _defaultCenter;
+    _controller?.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(
+          target: target,
+          zoom: _zoom,
+          bearing: 0,
+          tilt: 0,
+        ),
+      ),
+    );
   }
 
-  void _zoomOut() {
-    setState(() => _currentZoom -= 1);
-    _mapController.move(_mapController.camera.center, _currentZoom);
-  }
-
-  void _toggleFullScreen() {
-    setState(() => _isFullScreen = !_isFullScreen);
+  void _toggleSatellite() {
+    setState(() {
+      _mapType = _mapType == MapType.normal ? MapType.satellite : MapType.normal;
+    });
   }
 
   void _showSnack(String msg) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg)),
     );
   }
 
+  Future<void> _createNewGroupDialog() async {
+    final controller = TextEditingController();
+
+    final name = await showDialog<String?>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text("Create new group"),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: "Group name (e.g. Hostel mates)",
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final v = controller.text.trim();
+                Navigator.pop(ctx, v.isEmpty ? null : v);
+              },
+              child: const Text("Create"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (name == null) return;
+
+    final newGroup = SafetyGroup.dummy(name);
+    setState(() {
+      _groups = [newGroup, ..._groups];
+      _currentGroup = newGroup;
+    });
+
+    _showSnack("Group created: ${newGroup.name}");
+  }
+
+  void _showInviteDialog(String link) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Bubble Created 🎉"),
+        content: SelectableText(link),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Share.share(link); // use share_plus
+            },
+            child: const Text("Share"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Done"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<BitmapDescriptor> _letterMarker(
+      String letter, Color color) async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final paint = Paint()..color = color;
+    canvas.drawCircle(const Offset(40, 40), 40, paint);
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: letter,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 36,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(40 - textPainter.width / 2, 40 - textPainter.height / 2),
+    );
+
+    final img = await recorder.endRecording().toImage(80, 80);
+    final bytes = await img.toByteData(format: ImageByteFormat.png);
+
+    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final initialTarget = _myLocation ?? _defaultCenter;
+
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            if (!_isFullScreen) ...[
-              // ✅ Area Name header
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _loadingLocation ? "Loading..." : "Current Area",
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _currentAreaName,
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .textTheme
-                                .bodyMedium!
-                                .color!
-                                .withValues(alpha: 0.7),
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.1),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: IconButton(
-                        onPressed: _goToMyLocation,
-                        icon: Icon(
-                          Icons.my_location,
-                          color: Theme.of(context).primaryColor,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+            MapSearchBar(
+              onPlaceSelected: (latLng) {
+                _controller?.animateCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(target: latLng, zoom: 16),
+                  ),
+                );
+              },
+            ),
+
+            // ✅ Google Map
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: initialTarget,
+                zoom: _zoom,
               ),
+              mapType: _mapType,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              compassEnabled: false, // we are making our own "north" btn
+              zoomControlsEnabled: false,
+              onMapCreated: (c) {
+                _controller = c;
+                },
+              markers: _markers,
+            ),
 
-              // ✅ Search Bar + Suggestions dropdown
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Column(
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(15),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        focusNode: _searchFocus,
-                        decoration: InputDecoration(
-                          hintText: 'Search area...',
-                          hintStyle: TextStyle(
-                            color: Theme.of(context)
-                                .textTheme
-                                .bodyMedium!
-                                .color!
-                                .withValues(alpha: 0.5),
-                          ),
-                          border: InputBorder.none,
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: Theme.of(context).primaryColor,
-                          ),
-                          suffixIcon: IconButton(
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() => _suggestions = []);
-                            },
-                            icon: Icon(
-                              Icons.close,
-                              color: Theme.of(context).primaryColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                    // ✅ Suggestions
-                    if (_suggestions.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(top: 10),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(15),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.08),
-                              blurRadius: 12,
-                            ),
-                          ],
-                        ),
-                        child: ListView.separated(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: _suggestions.length,
-                          separatorBuilder: (_, __) => Divider(
-                            height: 1,
-                            color: Colors.black.withValues(alpha: 0.08),
-                          ),
-                          itemBuilder: (context, index) {
-                            final place = _suggestions[index];
-                            return ListTile(
-                              leading: Icon(Icons.location_on,
-                                  color: Theme.of(context).primaryColor),
-                              title: Text(
-                                place["name"],
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              onTap: () => _onSuggestionTap(place),
-                            );
-                          },
-                        ),
-                      ),
+            ShaderMask(
+              shaderCallback: (Rect bounds) {
+                return const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black,
+                    Colors.transparent,
                   ],
-                ),
-              ),
-            ],
-
-            // ✅ Map View
-            Expanded(
+                  stops: [0.7, 1.0],
+                ).createShader(bounds);
+              },
+              blendMode: BlendMode.dstIn,
               child: Container(
-                margin: _isFullScreen ? EdgeInsets.zero : const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(_isFullScreen ? 0 : 25),
-                  color: Theme.of(context).cardColor,
-                  boxShadow: _isFullScreen
-                      ? []
-                      : [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 20,
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  children: [
-                    FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: _myLocation ?? _defaultCenter,
-                        initialZoom: _currentZoom,
-                      ),
-                      children: [
-                        // ✅ High contrast LIGHT tiles
-                        TileLayer(
-                          urlTemplate:
-                          "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-                          subdomains: const ['a', 'b', 'c', 'd'],
-                          userAgentPackageName: "com.example.app",
-                        ),
+                color: Theme.of(context).cardColor,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Positioned(
+                    top: 8,
+                    left: 0,
+                    right: 0,
+                    child: GroupBubbleBar(
+                      groups: _groups,
+                      currentGroup: _currentGroup,
+                      onCreate: () {
+                        showDialog(
+                          context: context,
+                          builder: (_) => CreateBubbleDialog(
+                            onCreate: (name, icon, color) async {
+                              final res = await ApiService.createBubble(
+                                name: name,
+                                icon: icon.codePoint,
+                                color: color.value,
+                              );
 
-                        // ✅ Heatmap
-                        HeatMapLayer(
-                          heatMapDataSource: InMemoryHeatMapDataSource(data: heatPoints),
-                          heatMapOptions: HeatMapOptions(
-                            radius: 45,
-                            blurFactor: 0.8,
-                            minOpacity: 0.15,
-                          ),
-                        ),
+                              // save + update UI
+                              setState(() {
+                                _groups.insert(0, res.group);
+                                _currentGroup = res.group;
+                              });
 
-                        // ✅ Markers
-                        MarkerLayer(
-                          markers: [
-                            // ✅ SMALL PIN marker (no bg)
-                            if (_myLocation != null)
-                              Marker(
-                                point: _myLocation!,
-                                width: 28,
-                                height: 28,
-                                child: Icon(
-                                  Icons.location_pin,
-                                  color: Theme.of(context).primaryColor,
-                                  size: 28,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
+                              _showInviteDialog(res.inviteLink);
+                            },
+                          ),
+                        );
+                      },
 
-                    // ✅ Buttons on right side
-                    Positioned(
-                      right: 14,
-                      bottom: 20,
-                      child: Column(
-                        children: [
-                          _fabButton(
-                            icon: _isFullScreen
-                                ? Icons.fullscreen_exit
-                                : Icons.fullscreen,
-                            onTap: _toggleFullScreen,
-                            context: context,
-                          ),
-                          const SizedBox(height: 12),
-                          _fabButton(
-                            icon: Icons.add,
-                            onTap: _zoomIn,
-                            context: context,
-                          ),
-                          const SizedBox(height: 12),
-                          _fabButton(
-                            icon: Icons.remove,
-                            onTap: _zoomOut,
-                            context: context,
-                          ),
-                          const SizedBox(height: 12),
-                          _fabButton(
-                            icon: Icons.my_location,
-                            onTap: _goToMyLocation,
-                            context: context,
-                          ),
-                        ],
-                      ),
+                      onSelect: (g) async {
+                        setState(() => _currentGroup = g);
+
+                        // 🔐 persist selected group
+                        await GroupStorage.saveSelectedGroup(g.id);
+
+                        await _updateMarkers();
+                        // _showSnack("Active group: ${g.name}");
+                      },
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
 
-            // ✅ Simplified Threat legend
-            if (!_isFullScreen) ...[
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 15,
+            // ✅ Left group strip
+            MapGroupMembersStripLeft(
+              group: _currentGroup,
+              onMemberTap: (member) {
+                final target = LatLng(member.lat, member.lng);
+
+                _controller?.animateCamera(
+                  CameraUpdate.newCameraPosition(
+                    CameraPosition(
+                      target: target,
+                      zoom: 17,
                     ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _simpleThreatChip("Safe", AppTheme.successColor),
-                    _simpleThreatChip("Alert", AppTheme.warningColor),
-                    _simpleThreatChip("Risk", AppTheme.dangerColor),
-                  ],
+                  ),
+                );
+
+                _showSnack("${member.name}'s location");
+              },
+            ),
+
+
+            // ✅ Right incognito strip
+            MapIncognitoStripRight(
+              incognito: _incognito,
+              onChanged: (v) {
+                setState(() => _incognito = v);
+              },
+            ),
+
+            // ✅ Map floating controls (bottom-right)
+            Positioned(
+              right: 14,
+              bottom: 22,
+              child: Column(
+                children: [
+                  _circleBtn(
+                    icon: Icons.public, // satellite btn
+                    onTap: _toggleSatellite,
+                    tooltip: _mapType == MapType.satellite
+                        ? "Normal Map"
+                        : "Satellite Map",
+                  ),
+                  const SizedBox(height: 12),
+                  _circleBtn(
+                    icon: Icons.navigation, // north
+                    onTap: _resetToNorth,
+                    tooltip: "North",
+                  ),
+                  const SizedBox(height: 12),
+                  _circleBtn(
+                    icon: Icons.my_location,
+                    onTap: _goToMyLocation,
+                    tooltip: "My Location",
+                  ),
+                ],
+              ),
+            ),
+
+            // small loading top indicator
+            if (_loadingLocation)
+              Positioned(
+                top: 14,
+                left: 14,
+                right: 14,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: theme.cardColor.withOpacity(0.92),
+                    borderRadius: BorderRadius.circular(14),
+                    boxShadow: [
+                      BoxShadow(
+                        blurRadius: 16,
+                        color: Colors.black.withOpacity(0.15),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: const [
+                      SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      SizedBox(width: 10),
+                      Text("Fetching location..."),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
-            ]
+            Positioned(
+              left: 14,
+              bottom: 22,
+              child: FloatingActionButton(
+                heroTag: "bubbleInfo",
+                child: const Icon(Icons.groups),
+                onPressed: () {
+                  showModalBottomSheet(
+                    context: context,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    builder: (_) => BubbleInfoSheet(group: _currentGroup),
+                  );
+                },
+              ),
+            ),
+
           ],
         ),
       ),
     );
   }
 
-  Widget _fabButton({
+  Widget _circleBtn({
     required IconData icon,
     required VoidCallback onTap,
-    required BuildContext context,
+    required String tooltip,
   }) {
-    return Material(
-      elevation: 6,
-      shape: const CircleBorder(),
-      color: Theme.of(context).cardColor,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Icon(
-            icon,
-            color: Theme.of(context).primaryColor,
-            size: 22,
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        elevation: 7,
+        shape: const CircleBorder(),
+        color: theme.cardColor.withOpacity(0.95),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Icon(
+              icon,
+              size: 22,
+              color: theme.primaryColor,
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  Widget _simpleThreatChip(String label, Color color) {
-    return Row(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          "$label",
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-      ],
     );
   }
 }

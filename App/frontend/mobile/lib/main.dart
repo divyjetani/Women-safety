@@ -322,17 +322,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 40),
                     padding: const EdgeInsets.all(16),
-                    // decoration: BoxDecoration(
-                    //   // color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
-                    //   borderRadius: BorderRadius.circular(16),
-                    //   boxShadow: [
-                    //     BoxShadow(
-                    //       color: isDark ? Colors.black.withOpacity(0.3) : Colors.black12,
-                    //       blurRadius: 10,
-                    //       spreadRadius: 1,
-                    //     ),
-                    //   ],
-                    // ),
+
                     child: Column(
                       children: [
                         const SizedBox(height: 15,),
@@ -365,7 +355,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.primaryColor.withOpacity(0.1),
+                // color: AppTheme.primaryColor.withOpacity(0.1),
               ),
               child: Icon(
                 icon1,
@@ -392,7 +382,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AppTheme.primaryColor.withOpacity(0.1),
+                // color: AppTheme.primaryColor.withOpacity(0.1),
               ),
               child: Icon(
                 icon2,

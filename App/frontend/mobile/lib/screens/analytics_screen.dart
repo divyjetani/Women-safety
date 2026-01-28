@@ -1,3 +1,4 @@
+// lib/screen/analytics_screen.dart
 import 'package:flutter/material.dart';
 import 'package:mobile/conn_url.dart';
 import 'package:shimmer/shimmer.dart';
@@ -717,7 +718,7 @@ class _SafetyTipsCard extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 10),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.08),
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.02),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Row(
@@ -725,7 +726,7 @@ class _SafetyTipsCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
+                      // color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Icon(
