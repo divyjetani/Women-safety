@@ -949,7 +949,7 @@ def add_member(group_id: str, body: AddMemberReq):
 
 @app.post("/groups/{group_id}/share")
 def share_location(group_id: str, body: ShareReq):
-    """
+    """3
     This is called every few seconds from Flutter
     - If incognito == True => we accept but DO NOT save location
     - If incognito == False => save latest share for that user
@@ -1025,4 +1025,5 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
-# uvicorn main:app --reload --host 0.0.0.0 --port 800
+# uvicorn main:app --reload --host 0.0.0.0 --port 8000
+
