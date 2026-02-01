@@ -39,7 +39,44 @@ class _AskAIBarState extends State<AskAIBar> {
         userId: widget.userId,
         question: question,
         detailed: detailed,
-      ).timeout(const Duration(seconds: 15));
+      ).timeout(const Duration(seconds: 20));
+
+// ---------------example output of ai --------------
+//       final Map<String, dynamic> res = {
+//         "short_answer":
+//         "Stay alert, trust your instincts, and use nearby resources for safety.",
+//
+//         "detailed_answer": """
+// ## Personal Safety Guidance
+//
+// Staying safe requires **awareness, preparation, and quick decision-making**.
+//
+// ### While Moving Outside
+// - Stay in **well-lit and crowded areas**
+// - Avoid using headphones at high volume
+// - Share your **live location** with a trusted person
+//
+// ### Use Technology Smartly
+// - Keep your phone **charged**
+// - Enable **emergency SOS**
+// - Save local **police & emergency contacts**
+//
+// ### If You Sense Danger
+// - Trust your instincts — **leave immediately**
+// - Enter a nearby **shop, hospital, or police station**
+// - Call emergency services if needed
+//
+// ---
+// > Note: This is an AI generated response, If you are in any emergency then call on police helpline: 112 or women helpline: 181
+// """,
+//
+//         "tips": [
+//           "Avoid isolated shortcuts",
+//           "Keep emergency numbers on speed dial",
+//           "Inform someone when traveling late",
+//           "Carry basic self-defense tools"
+//         ]
+//       };
 
       if (!mounted) return;
       setState(() => _sending = false);
@@ -176,6 +213,365 @@ class _AskAIBarState extends State<AskAIBar> {
   }
 }
 
+class CreativeMarkdownView extends StatelessWidget {
+  final String markdown;
+
+  const CreativeMarkdownView({super.key, required this.markdown});
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = markdown.split('\n');
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final trimmed = line.trim();
+
+      if (trimmed.isEmpty) continue;
+
+      if (trimmed.startsWith('# ')) {
+        widgets.add(_H1Section(title: trimmed.substring(2)));
+      }
+      else if (trimmed.startsWith('## ')) {
+        widgets.add(_H2Section(title: trimmed.substring(3)));
+      }
+      else if (trimmed.startsWith('### ')) {
+        widgets.add(_H3Label(text: trimmed.substring(4)));
+      }
+      else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        widgets.add(_BulletItem(text: trimmed.substring(2)));
+      }
+      else if (trimmed.startsWith('```')) {
+        final buffer = StringBuffer();
+        i++;
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          buffer.writeln(lines[i]);
+          i++;
+        }
+        widgets.add(_CodeBlock(code: buffer.toString()));
+      }
+      else if (RegExp(r'^\d+\. ').hasMatch(trimmed)) {
+        widgets.add(_OrderedItem(text: trimmed.replaceFirst(RegExp(r'^\d+\. '), '')));
+      }
+      else if (trimmed.startsWith('> ')) {
+        widgets.add(_QuoteBlock(text: trimmed.substring(2)));
+      }
+      else if (trimmed == '---') {
+        widgets.add(const _FancyDivider());
+      }
+      else {
+        widgets.add(_RichParagraph(text: line));
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: widgets
+          .map((w) => Padding(padding: const EdgeInsets.only(bottom: 12), child: w))
+          .toList(),
+    );
+  }
+}
+
+class _H1Section extends StatelessWidget {
+  final String title;
+  const _H1Section({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppTheme.primaryColor.withOpacity(0.22),
+            AppTheme.accentColor.withOpacity(0.18),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _H2Section extends StatelessWidget {
+  final String title;
+  const _H2Section({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 6,
+          height: 24,
+          decoration: BoxDecoration(
+            color: AppTheme.primaryColor,
+            borderRadius: BorderRadius.circular(99),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _H3Label extends StatelessWidget {
+  final String text;
+  const _H3Label({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      backgroundColor: Colors.purple.withOpacity(0.06),
+      label: Text(
+        text,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _BulletItem extends StatelessWidget {
+  final String text;
+  const _BulletItem({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.check_circle, size: 18, color: AppTheme.primaryColor),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FancyDivider extends StatelessWidget {
+  const _FancyDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1.2,
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.transparent,
+            AppTheme.primaryColor.withOpacity(0.6),
+            Colors.transparent,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuoteBlock extends StatelessWidget {
+  final String text;
+  const _QuoteBlock({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border(
+          left: BorderSide(color: AppTheme.primaryColor, width: 4),
+        ),
+        color: Colors.purple.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(fontStyle: FontStyle.italic),
+      ),
+    );
+  }
+}
+
+class _OrderedItem extends StatelessWidget {
+  final String text;
+  const _OrderedItem({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: AppTheme.primaryColor,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            '•',
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Text(text)),
+      ],
+    );
+  }
+}
+
+class _RichParagraph extends StatelessWidget {
+  final String text;
+  const _RichParagraph({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final List<InlineSpan> spans = [];
+
+    final RegExp exp = RegExp(
+      r'(\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|`[^`]+`)',
+    );
+
+    int currentIndex = 0;
+
+    for (final match in exp.allMatches(text)) {
+      // Normal text before match
+      if (match.start > currentIndex) {
+        spans.add(
+          TextSpan(
+            text: text.substring(currentIndex, match.start),
+          ),
+        );
+      }
+
+      final matchedText = match.group(0)!;
+
+      // **bold**
+      if (matchedText.startsWith('**')) {
+        spans.add(
+          TextSpan(
+            text: matchedText.substring(2, matchedText.length - 2),
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+        );
+      }
+
+      // *italic*
+      else if (matchedText.startsWith('*')) {
+        spans.add(
+          TextSpan(
+            text: matchedText.substring(1, matchedText.length - 1),
+            style: const TextStyle(fontStyle: FontStyle.italic),
+          ),
+        );
+      }
+
+      // ~~strike~~
+      else if (matchedText.startsWith('~~')) {
+        spans.add(
+          TextSpan(
+            text: matchedText.substring(2, matchedText.length - 2),
+            style: const TextStyle(
+              decoration: TextDecoration.lineThrough,
+            ),
+          ),
+        );
+      }
+
+      // `inline code`
+      else if (matchedText.startsWith('`')) {
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.baseline,
+            baseline: TextBaseline.alphabetic,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                matchedText.substring(1, matchedText.length - 1),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
+      currentIndex = match.end;
+    }
+
+    // Remaining normal text
+    if (currentIndex < text.length) {
+      spans.add(
+        TextSpan(
+          text: text.substring(currentIndex),
+        ),
+      );
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: Theme.of(context)
+            .textTheme
+            .bodyMedium
+            ?.copyWith(height: 1.5),
+        children: spans,
+      ),
+    );
+  }
+}
+
+class _CodeBlock extends StatelessWidget {
+  final String code;
+  const _CodeBlock({required this.code});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        code,
+        style: const TextStyle(
+          fontFamily: 'monospace',
+          color: Colors.white,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+}
+
+
 /// ======================================================
 /// ✅ Animated Answer Sheet
 /// ======================================================
@@ -295,8 +691,8 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
-                                      AppTheme.accentColor.withOpacity(0.18),
-                                      AppTheme.primaryColor.withOpacity(0.14),
+                                      Colors.black.withOpacity(0.18),
+                                      Colors.black.withOpacity(0.14),
                                     ],
                                   ),
                                   borderRadius: BorderRadius.circular(999),
@@ -348,8 +744,8 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
                             decoration: BoxDecoration(
                               gradient: LinearGradient(
                                 colors: [
-                                  AppTheme.accentColor.withOpacity(0.12),
-                                  AppTheme.primaryColor.withOpacity(0.10),
+                                  Colors.black.withOpacity(0.12),
+                                  Colors.black.withOpacity(0.10),
                                 ],
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
@@ -360,7 +756,9 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
                               ),
                             ),
                             child: hasDetailed
-                                ? _MarkdownAnswer(text: widget.detailedAnswer.trim())
+                                ? CreativeMarkdownView(
+                              markdown: widget.detailedAnswer.trim(),
+                            )
                                 : Text(
                               displayShort,
                               style: txt.bodyMedium?.copyWith(

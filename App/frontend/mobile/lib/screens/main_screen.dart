@@ -42,7 +42,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: _screens[_selectedIndex],
       bottomNavigationBar: Container(
-        color: Colors.transparent, // Transparent background
+        color: Colors.transparent,
         child: CustomBottomNavBar(
           currentIndex: _selectedIndex,
           onTap: (index) {

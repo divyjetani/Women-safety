@@ -100,14 +100,15 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
-                        child: const Icon(
-                          Icons.shield,
-                          size: 60,
-                          color: Colors.white,
+                        child: Image.asset(
+                          'assets/logo2.png',
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.contain,
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Text('She Raksha', style: text.displayMedium),
+                      Text('She Safe', style: text.displayMedium),
                       const SizedBox(height: 8),
                       Text(
                         'Your Personal Safety Companion',

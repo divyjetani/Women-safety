@@ -60,6 +60,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late Animation<double> _opacityAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<Color?> _colorAnimation;
+  late Animation<double> _logoOffsetAnimation;
+  late Animation<double> _textOffsetAnimation;
 
   @override
   void initState() {
@@ -91,6 +93,26 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       CurvedAnimation(
         parent: _controller,
         curve: Curves.easeInOut,
+      ),
+    );
+
+    _logoOffsetAnimation = Tween<double>(
+      begin: 20, // logo starts slightly lower
+      end: 0,    // moves up into place
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.4, curve: Curves.easeOut),
+      ),
+    );
+
+    _textOffsetAnimation = Tween<double>(
+      begin: 20,
+      end: 0,
+    ).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.4, 0.8, curve: Curves.easeOut),
       ),
     );
 
@@ -131,49 +153,42 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // Main logo container
-                Transform.scale(
-                  scale: _scaleAnimation.value,
-                  child: Container(
-                    width: 150,
-                    height: 150,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          _colorAnimation.value!,
-                          _colorAnimation.value!.withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        stops: const [0.1, 0.5, 1.0],
-                      ),
-                    ),
+                Transform.translate(
+                  offset: Offset(0, _logoOffsetAnimation.value),
+                  child: Transform.scale(
+                    scale: _scaleAnimation.value,
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        // Pulsing circles
-                        for (int i = 0; i < 3; i++)
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 1500),
-                            width: 150 + (i * 20) * (1 + 0.2 * _controller.value),
-                            height: 150 + (i * 20) * (1 + 0.2 * _controller.value),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppTheme.primaryColor.withOpacity(0.1 - (i * 0.02)),
-                                width: 1,
-                              ),
-                            ),
+                        // Outer pulse
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 1200),
+                          width: 180 + (_controller.value * 20),
+                          height: 180 + (_controller.value * 20),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppTheme.primaryColor.withOpacity(0.08),
                           ),
+                        ),
 
-                        // Shield icon container
+                        // Inner pulse
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 1200),
+                          width: 120 + (_controller.value * 10),
+                          height: 120 + (_controller.value * 10),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppTheme.primaryColor.withOpacity(0.15),
+                          ),
+                        ),
+
+                        // Core circle
                         Container(
-                          width: 100,
-                          height: 100,
+                          width: 90,
+                          height: 90,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             gradient: LinearGradient(
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
                               colors: [
                                 AppTheme.primaryColor,
                                 AppTheme.accentColor,
@@ -183,32 +198,17 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                               BoxShadow(
                                 color: AppTheme.primaryColor.withOpacity(0.4),
                                 blurRadius: 20,
-                                spreadRadius: 5,
                               ),
                             ],
                           ),
-                          child: Icon(
-                            Icons.security,
-                            size: 50,
-                            color: Colors.white,
-                          ),
                         ),
 
-                        // Rotating safety ring
-                        Transform.rotate(
-                          angle: _controller.value * 6.28, // 360 degrees
-                          child: Container(
-                            width: 130,
-                            height: 130,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: AppTheme.secondaryColor.withOpacity(0.3),
-                                width: 2,
-                                strokeAlign: BorderSide.strokeAlignOutside,
-                              ),
-                            ),
-                          ),
+                        // ✅ YOUR LOGO INSIDE THE CIRCLE
+                        Image.asset(
+                          'assets/logo2.png',
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.contain,
                         ),
                       ],
                     ),
@@ -217,198 +217,47 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
                 const SizedBox(height: 40),
 
-                // App Name with fade animation
-                Opacity(
-                  opacity: _opacityAnimation.value,
-                  child: Column(
-                    children: [
-                      ShaderMask(
-                        shaderCallback: (bounds) {
-                          return LinearGradient(
-                            colors: [
-                              AppTheme.primaryColor,
-                              AppTheme.accentColor,
-                            ],
-                          ).createShader(bounds);
-                        },
-                        child: Text(
-                          'She Safe',
-                          style: TextStyle(
-                            fontSize: 42,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                            fontFamily: 'Poppins',
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 60),
-
-                // Loading indicator
-                SizedBox(
-                  width: 250,
-                  child: Column(
-                    children: [
-                      Container(
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white.withOpacity(0.1) : AppTheme.secondaryColor,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            height: 6,
-                            width: 250 * _controller.value,
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: [
-                                  AppTheme.primaryColor,
-                                  AppTheme.accentColor,
-                                ],
-                              ),
-                              borderRadius: BorderRadius.circular(3),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppTheme.primaryColor.withOpacity(0.3),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 10),
-
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _getLoadingMessage(_controller.value),
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: secondaryTextColor,
-                              fontFamily: 'Poppins',
-                            ),
-                          ),
-
-                          Text(
-                            '${(_controller.value * 100).toInt()}%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: AppTheme.primaryColor,
-                              fontWeight: FontWeight.bold,
-                              fontFamily: 'Poppins',
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 40),
-
-                // Safety features showcase
-                Opacity(
-                  opacity: _controller.value > 0.5 ? 1.0 : 0.0,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 40),
-                    padding: const EdgeInsets.all(16),
-
+                Transform.translate(
+                  offset: Offset(0, _textOffsetAnimation.value),
+                  child: Opacity(
+                    opacity: _opacityAnimation.value,
                     child: Column(
                       children: [
-                        const SizedBox(height: 15,),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _buildFeatureIcon(Icons.location_on, "", Icons.analytics, ''),
-                            _buildFeatureIcon(Icons.notifications, '', Icons.security, ''),
-                          ],
+                        Text(
+                          'She Safe',
+                          style: TextStyle(
+                            fontSize: 40,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.5,
+                            fontFamily: 'Poppins',
+                            color: textColor,
+                          ),
+                        ),
+
+                        const SizedBox(height: 8),
+
+                        Opacity(
+                          opacity: _opacityAnimation.value * 0.8,
+                          child: Text(
+                            'Safety that stays with you.',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: secondaryTextColor,
+                              letterSpacing: 0.5,
+                              fontFamily: 'Poppins',
+                            ),
+                          ),
                         ),
                       ],
                     ),
                   ),
                 ),
+
               ],
             );
           },
         ),
       ),
     );
-  }
-
-  Widget _buildFeatureIcon(IconData icon1, String label1, IconData icon2, String label2) {
-    return Row(
-      children: [
-        Column(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                // color: AppTheme.primaryColor.withOpacity(0.1),
-              ),
-              child: Icon(
-                icon1,
-                size: 20,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label1,
-              style: const TextStyle(
-                fontSize: 10,
-                fontFamily: 'Poppins',
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(width: 30),
-        Column(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                // color: AppTheme.primaryColor.withOpacity(0.1),
-              ),
-              child: Icon(
-                icon2,
-                size: 20,
-                color: AppTheme.primaryColor,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label2,
-              style: const TextStyle(
-                fontSize: 10,
-                fontFamily: 'Poppins',
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  String _getLoadingMessage(double progress) {
-    if (progress < 0.25) return 'Initializing safety protocols...';
-    if (progress < 0.5) return 'Loading threat detection AI...';
-    if (progress < 0.75) return 'Connecting emergency services...';
-    return 'Ready to protect!';
   }
 }

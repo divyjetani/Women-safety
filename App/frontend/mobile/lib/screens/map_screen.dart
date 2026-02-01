@@ -100,14 +100,14 @@ class _MapScreenState extends State<MapScreen> {
           GroupMember(
             id: "u1",
             name: "Divy",
-            lat: 28.6145,
-            lng: 77.2098,
+            lat: 23.6145,
+            lng: 72.2098,
           ),
           GroupMember(
             id: "u2",
             name: "Mom",
-            lat: 28.6129,
-            lng: 77.2080,
+            lat: 23.6129,
+            lng: 72.2080,
           ),
         ],
       ),

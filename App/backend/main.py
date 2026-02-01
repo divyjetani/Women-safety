@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import json
+import random, string
 from google import genai
 from uuid import uuid4
 
@@ -83,13 +84,30 @@ class CreateBubbleReq(BaseModel):
     icon: int
     color: int
     
+class Member(BaseModel):
+    user_id: int
+    name: str
+    lat: float | None = None
+    lng: float | None = None
+
+class CreateBubbleReq(BaseModel):
+    name: str
+    icon: int
+    color: int
+    admin_id: int
+    admin_name: str
+
+class JoinBubbleReq(BaseModel):
+    code: str
+    user_id: int
+    name: str
+    
 BUBBLES = {}       # group_id -> group
 INVITES = {}       # token -> group_id
 
+def generate_code():
+    return ''.join(random.choices(string.ascii_uppercase, k=6))
 
-# ============================================================
-# Mock Databases
-# ============================================================
 users_db = {
     1: User(
         id=1,
@@ -263,39 +281,93 @@ class AskAIRequest(BaseModel):
     question: str
     detailed: bool = False
 
+# @app.post("/bubble/create")
+# def create_bubble(req: CreateBubbleReq):
+#     group_id = str(uuid4())
+#     invite_token = str(uuid4())
+
+#     bubble = {
+#         "id": group_id,
+#         "name": req.name,
+#         "icon": req.icon,
+#         "color": req.color,
+#         "members": [],
+#     }
+
+#     BUBBLES[group_id] = bubble
+#     INVITES[invite_token] = group_id
+
+#     return {
+#         "group": bubble,
+#         "invite_link": f"safebubble://join/{invite_token}"
+#     }
+    
+# @app.post("/bubble/join/{token}")
+# def join_bubble(token: str, user_id: str):
+#     if token not in INVITES:
+#         return {"error": "Invalid invite"}
+
+#     group_id = INVITES[token]
+#     bubble = BUBBLES[group_id]
+
+#     bubble["members"].append(user_id)
+
+#     return bubble
+
 @app.post("/bubble/create")
 def create_bubble(req: CreateBubbleReq):
-    group_id = str(uuid4())
-    invite_token = str(uuid4())
+    code = generate_code()
 
     bubble = {
-        "id": group_id,
+        "id": len(BUBBLES) + 1,
+        "code": code,
         "name": req.name,
         "icon": req.icon,
         "color": req.color,
-        "members": [],
+        "admin_id": req.admin_id,
+        "members": [
+            {
+                "user_id": req.admin_id,
+                "name": req.admin_name,
+                "lat": None,
+                "lng": None
+            }
+        ]
     }
 
-    BUBBLES[group_id] = bubble
-    INVITES[invite_token] = group_id
-
-    return {
-        "group": bubble,
-        "invite_link": f"safebubble://join/{invite_token}"
-    }
-    
-@app.post("/bubble/join/{token}")
-def join_bubble(token: str, user_id: str):
-    if token not in INVITES:
-        return {"error": "Invalid invite"}
-
-    group_id = INVITES[token]
-    bubble = BUBBLES[group_id]
-
-    bubble["members"].append(user_id)
-
+    BUBBLES[code] = bubble
     return bubble
 
+
+@app.post("/bubble/join")
+def join_bubble(req: JoinBubbleReq):
+    bubble = BUBBLES.get(req.code)
+    if not bubble:
+        raise HTTPException(404, "Invalid bubble code")
+
+    if any(m["user_id"] == req.user_id for m in bubble["members"]):
+        return bubble
+
+    bubble["members"].append({
+        "user_id": req.user_id,
+        "name": req.name,
+        "lat": None,
+        "lng": None
+    })
+    return bubble
+
+
+@app.delete("/bubble/{code}")
+def delete_bubble(code: str, user_id: int):
+    bubble = BUBBLES.get(code)
+    if not bubble:
+        raise HTTPException(404)
+
+    if bubble["admin_id"] != user_id:
+        raise HTTPException(403, "Only admin can delete")
+
+    del BUBBLES[code]
+    return {"success": True}
 
 
 @app.post("/ai/ask")
@@ -316,7 +388,7 @@ Rules:
 - Use bullet points if needed.
 - Give practical steps.
 - If user asks anything else except women safety please say, you can't do it, you will only answer for women safety
-- do use md file syntax
+- do use md file syntax (do not add **bold**  or *italic* syntax). add --- before h3 heading. and also give one h1 (it should be short one line solution), also you can use h2 if needed.
 - max 20 Lines
 """
         else:
@@ -351,7 +423,7 @@ Rules:
             return {
                 "success": True,
                 "short_answer": "",
-                "detailed_answer": text,
+                "detailed_answer": text + "\n--- \n> Note: This is an AI generated response, If you are in any emergency then call on police helpline: 112 or women helpline: 181",
                 "tips": tips
             }
 
