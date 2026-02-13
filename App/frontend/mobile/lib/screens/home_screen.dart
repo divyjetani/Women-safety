@@ -337,29 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       MaterialPageRoute(builder: (_) => const HelpSupportScreen()),
                     );
                   },
-                ),
-                _menuTile(
-                  icon: Icons.notifications_outlined,
-                  title: "Notifications",
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      this.context,
-                      MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                    );
-                  },
-                ),
-                // _menuTile(
-                //   icon: Icons.settings_rounded,
-                //   title: "Settings",
-                //   onTap: () {
-                //     // ✅ user will do
-                //     Navigator.push(
-                //       this.context,
-                //       MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                //     );
-                //   },
-                // ),
+                )
               ],
             ),
           ),

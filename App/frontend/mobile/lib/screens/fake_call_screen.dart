@@ -416,115 +416,115 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
             ),
             const SizedBox(height: 10),
 
-            _fakeCallRecordings.isEmpty
-                ? const Center(child: Text("No recordings yet"))
-                : ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: _fakeCallRecordings.length,
-              itemBuilder: (context, i) {
-                final r = _fakeCallRecordings[i];
-                final status = r["uploadStatus"] ?? "pending";
+            Expanded(
+              child: _fakeCallRecordings.isEmpty
+                  ? const Center(child: Text("No recordings yet"))
+                  : ListView.builder(
+                itemCount: _fakeCallRecordings.length,
+                itemBuilder: (context, i) {
+                  final r = _fakeCallRecordings[i];
+                  final status = r["uploadStatus"] ?? "pending";
 
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            "Fake Call Recording",
-                            style: TextStyle(fontWeight: FontWeight.w900),
-                          ),
-                          const Spacer(),
-                          Text(
-                            status.toUpperCase(),
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              color: _statusColor(status),
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Text(
+                              "Fake Call Recording",
+                              style: TextStyle(fontWeight: FontWeight.w900),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text("Duration: ${r["duration"]} sec"),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.play_circle_outline_rounded),
-                              label: const Text("Video"),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => SingleVideoPlayerScreen(
-                                      path: r["backVideoPath"],
-                                    ),
-                                  ),
-                                );
-                              },
+                            const Spacer(),
+                            Text(
+                              status.toUpperCase(),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                color: _statusColor(status),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.location_on_outlined),
-                              label: const Text("Location"),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        RecordingLocationScreen(recording: r),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (status == "failed") ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          "Upload failed: ${r["lastError"]}",
-                          style: TextStyle(
-                            color: AppTheme.dangerColor,
-                            fontSize: 12,
-                          ),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () => _uploadFakeCallRecording(r),
-                            icon: const Icon(Icons.refresh_rounded),
-                            label: const Text("Retry Upload"),
+                        const SizedBox(height: 6),
+                        Text("Duration: ${r["duration"]} sec"),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.play_circle_outline_rounded),
+                                label: const Text("Video"),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => SingleVideoPlayerScreen(
+                                        path: r["backVideoPath"],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.location_on_outlined),
+                                label: const Text("Location"),
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          RecordingLocationScreen(recording: r),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (status == "failed") ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            "Upload failed: ${r["lastError"]}",
+                            style: TextStyle(
+                              color: AppTheme.dangerColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () => _uploadFakeCallRecording(r),
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: const Text("Retry Upload"),
+                            ),
+                          ),
+                        ],
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            label: const Text("Delete"),
+                            onPressed: () => _deleteRecording(i),
+                            style: TextButton.styleFrom(
+                              foregroundColor: AppTheme.dangerColor,
+                            ),
                           ),
                         ),
                       ],
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          icon: const Icon(Icons.delete_outline_rounded),
-                          label: const Text("Delete"),
-                          onPressed: () => _deleteRecording(i),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppTheme.dangerColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),

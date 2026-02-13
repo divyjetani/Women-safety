@@ -13,6 +13,10 @@ import json
 import random, string
 from google import genai
 from uuid import uuid4
+import pandas as pd
+import numpy as np
+import joblib
+from sklearn.metrics.pairwise import haversine_distances
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyBj0oIAl_dY17Xu2f9X04AwO5AmCg1GAjQ") # from main gmail acc
 gemini_model = "gemini-2.5-flash"
@@ -317,7 +321,8 @@ class AskAIRequest(BaseModel):
 @app.post("/bubble/create")
 def create_bubble(req: CreateBubbleReq):
     code = generate_code()
-
+    
+    # add sample data
     bubble = {
         "id": len(BUBBLES) + 1,
         "code": code,
@@ -795,6 +800,72 @@ def get_recent_activity_old(user_id: int):
         {"id": 2, "type": "alert", "location": "Park Street", "time": "4 hours ago"},
         {"id": 3, "type": "checkin", "location": "Home", "time": "6 hours ago"},
     ]
+
+EARTH_RADIUS = 6371 
+class LocationRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+model = joblib.load("C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/geo_safety_model.pkl")
+scaler = joblib.load("C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/geo_scaler.pkl")
+df = pd.read_csv("C:/Users/divyj/Desktop/study/Capstone_Project/App/data/data 2.csv")
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    coords1 = np.radians([[lat1, lon1]])
+    coords2 = np.radians([[lat2, lon2]])
+    return haversine_distances(coords1, coords2)[0][0] * EARTH_RADIUS
+
+
+def get_features_for_location(lat, lon):
+    # Take nearest feature row
+    df["temp_distance"] = df.apply(
+        lambda row: calculate_distance(lat, lon, row["crime_area_lat"], row["crime_area_lon"]),
+        axis=1
+    )
+
+    nearest = df.loc[df["temp_distance"].idxmin()]
+
+    features = [
+        calculate_distance(lat, lon, nearest["police_lat"], nearest["police_lon"]),
+        calculate_distance(lat, lon, nearest["nearest_brts_lat"], nearest["nearest_brts_lon"]),
+        calculate_distance(lat, lon, nearest["crime_area_lat"], nearest["crime_area_lon"]),
+        calculate_distance(lat, lon, nearest["crowd_density_lat"], nearest["crowd_density_lon"]),
+        calculate_distance(lat, lon, nearest["cctv_coverage_lat"], nearest["cctv_coverage_lon"]),
+        calculate_distance(lat, lon, nearest["lighting_condition_lat"], nearest["lighting_condition_lon"]),
+        nearest["crime_rate_score"],
+        nearest["crowd_density_score"],
+        nearest["cctv_coverage_score"],
+        nearest["lighting_condition_score"],
+    ]
+
+    feature_names = [
+        "dist_police",
+        "dist_brts",
+        "dist_crime",
+        "dist_crowd",
+        "dist_cctv",
+        "dist_lighting",
+        "crime_rate_score",
+        "crowd_density_score",
+        "cctv_score",
+        "lighting_score"
+    ]
+
+    return pd.DataFrame([features], columns=feature_names)
+
+
+@app.post("/safety-score")
+async def get_safety_score(req: LocationRequest):
+
+    features = get_features_for_location(req.latitude, req.longitude)
+    features_scaled = scaler.transform(features)
+
+    prediction = model.predict(features_scaled)[0]
+    prediction = max(0, min(100, round(prediction, 2)))
+
+    return {
+        "risk_score" : prediction
+    }
 
 # ============================================================
 # Analytics (your old analytics page endpoints)

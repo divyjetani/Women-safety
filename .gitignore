@@ -9,6 +9,7 @@
 
 App/backend/uploads/
 App/frontend/web/node_modules/
+App/backend/models/
 
 # Flutter repo-specific
 /bin/cache/

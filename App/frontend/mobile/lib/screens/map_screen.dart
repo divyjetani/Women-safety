@@ -65,6 +65,10 @@ class _MapScreenState extends State<MapScreen> {
   GoogleMapController? _controller;
   Set<Marker> _markers = {};
 
+  LatLng? _tempPinLocation;
+  Marker? _scoreMarker;
+  bool _isSelectingLocation = false;
+
   LatLng? _myLocation;
   double _zoom = 15;
   bool _loadingLocation = true;
@@ -87,6 +91,37 @@ class _MapScreenState extends State<MapScreen> {
 
   // default fallback if no last location
   final LatLng _defaultCenter = const LatLng(23.0293515, 72.5530625); // Delhi
+
+  Future<BitmapDescriptor> _buildScoreMarkerIcon(String text) async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final paint = Paint()..color = Colors.red;
+    canvas.drawCircle(const Offset(50, 50), 50, paint);
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(50 - textPainter.width / 2, 50 - textPainter.height / 2),
+    );
+
+    final img = await recorder.endRecording().toImage(100, 100);
+    final bytes = await img.toByteData(format: ImageByteFormat.png);
+
+    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+  }
 
   @override
   void initState() {
@@ -249,7 +284,7 @@ class _MapScreenState extends State<MapScreen> {
     // 🔵 My location
     if (_myLocation != null) {
       final myIcon = await _letterMarker(
-        "D", // first letter of logged-in user
+        "D",
         Colors.blue,
       );
 
@@ -278,11 +313,25 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
 
+    // 🔴 Temp selection pin
+    if (_tempPinLocation != null) {
+      newMarkers.add(
+        Marker(
+          markerId: const MarkerId("temp_pin"),
+          position: _tempPinLocation!,
+        ),
+      );
+    }
+
+    // 🔴 Final score marker
+    if (_scoreMarker != null) {
+      newMarkers.add(_scoreMarker!);
+    }
+
     setState(() {
       _markers = newMarkers;
     });
   }
-
 
   /// ✅ North direction button (bearing reset)
   void _resetToNorth() {
@@ -365,6 +414,39 @@ class _MapScreenState extends State<MapScreen> {
     return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
   }
 
+  Future<void> _confirmLocationSelection() async {
+    if (_tempPinLocation == null) return;
+
+    try {
+      final result = await ApiService.fetchSafetyScore(
+        lat: _tempPinLocation!.latitude,
+        lng: _tempPinLocation!.longitude,
+      );
+
+      final score = result["risk_score"];
+
+      final markerIcon = await _buildScoreMarkerIcon(
+      score != null ? score.toString() : "--",
+      );
+
+      setState(() {
+        _scoreMarker = Marker(
+          markerId: const MarkerId("score_pin"),
+          position: _tempPinLocation!,
+          icon: markerIcon,
+        );
+
+        _tempPinLocation = null;
+        _isSelectingLocation = false;
+      });
+
+      await _updateMarkers();
+    } catch (e) {
+      _showSnack("Failed to fetch safety score");
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -401,69 +483,166 @@ class _MapScreenState extends State<MapScreen> {
                 _controller = c;
                 },
               markers: _markers,
+              onTap: (latLng) {
+                if (!_isSelectingLocation) return;
+
+                setState(() {
+                  _tempPinLocation = latLng;
+
+                  _markers.removeWhere(
+                        (m) => m.markerId.value == "temp_pin",
+                  );
+
+                  _markers.add(
+                    Marker(
+                      markerId: const MarkerId("temp_pin"),
+                      position: latLng,
+                    ),
+                  );
+                });
+              },
             ),
 
-            ShaderMask(
-              shaderCallback: (Rect bounds) {
-                return const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black,
-                    Colors.transparent,
-                  ],
-                  stops: [0.7, 1.0],
-                ).createShader(bounds);
-              },
-              blendMode: BlendMode.dstIn,
-              child: Container(
-                color: Theme.of(context).cardColor,
-                child: Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Positioned(
-                    top: 8,
-                    left: 0,
-                    right: 0,
-                    child: GroupBubbleBar(
-                      groups: _groups,
-                      currentGroup: _currentGroup,
-                      onCreate: () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => CreateBubbleDialog(
-                            onCreate: (name, icon, color) async {
-                              final res = await ApiService.createBubble(
-                                name: name,
-                                icon: icon.codePoint,
-                                color: color.value,
-                              );
-
-                              // save + update UI
-                              setState(() {
-                                _groups.insert(0, res.group);
-                                _currentGroup = res.group;
-                              });
-
-                              _showInviteDialog(res.inviteLink);
-                            },
+            if (_isSelectingLocation)
+              Positioned(
+                top: 100,
+                left: 20,
+                right: 20,
+                child: Material(
+                  elevation: 8,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.location_on, color: Colors.red, size: 28),
+                        SizedBox(height: 8),
+                        Text(
+                          "Tap anywhere on the map to drop a pin.",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
-                        );
-                      },
-
-                      onSelect: (g) async {
-                        setState(() => _currentGroup = g);
-
-                        // 🔐 persist selected group
-                        await GroupStorage.saveSelectedGroup(g.id);
-
-                        await _updateMarkers();
-                        // _showSnack("Active group: ${g.name}");
-                      },
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          "Drop pin on map to check safety score",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
+
+            if (_isSelectingLocation && _tempPinLocation != null)
+              Positioned(
+                bottom: 120,
+                left: 30,
+                right: 30,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _isSelectingLocation = false;
+                            _tempPinLocation = null;
+                            _markers.removeWhere(
+                                  (m) => m.markerId.value == "temp_pin",
+                            );
+                          });
+                        },
+                        child: const Text("Cancel"),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: _confirmLocationSelection,
+                        child: const Text("Safety Score"),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SizedBox(
+                height: 140,
+                child: ShaderMask(
+                  shaderCallback: (Rect bounds) {
+                    return const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black,
+                        Colors.transparent,
+                      ],
+                      stops: [0.7, 1.0],
+                    ).createShader(bounds);
+                  },
+                  blendMode: BlendMode.dstIn,
+                  child: Container(
+                    color: Theme.of(context).cardColor,
+                  ),
+                ),
+              ),
             ),
+
+
+            Positioned(
+              top: 8,
+              left: 8,
+              right: 8,
+              child: GroupBubbleBar(
+                groups: _groups,
+                currentGroup: _currentGroup,
+                onCreate: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => CreateBubbleDialog(
+                      onCreate: (name, icon, color) async {
+                        final res = await ApiService.createBubble(
+                          name: name,
+                          icon: icon.codePoint,
+                          color: color.value,
+                        );
+
+                        setState(() {
+                          _groups.insert(0, res.group);
+                          _currentGroup = res.group;
+                        });
+
+                        _showInviteDialog(res.inviteLink);
+                      },
+                    ),
+                  );
+                },
+                onSelect: (g) async {
+                  setState(() => _currentGroup = g);
+                  await GroupStorage.saveSelectedGroup(g.id);
+                  await _updateMarkers();
+                },
+              ),
+            ),
+
 
             // ✅ Left group strip
             MapGroupMembersStripLeft(
@@ -499,6 +678,24 @@ class _MapScreenState extends State<MapScreen> {
               bottom: 22,
               child: Column(
                 children: [
+                  _circleBtn(
+                    icon: Icons.location_pin,
+                    tooltip: "Check Safety",
+                    onTap: () {
+                      setState(() {
+                        _isSelectingLocation = true;
+                        _tempPinLocation = null;
+
+                        // remove old score marker
+                        if (_scoreMarker != null) {
+                          _markers.remove(_scoreMarker);
+                          _scoreMarker = null;
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
                   _circleBtn(
                     icon: Icons.public, // satellite btn
                     onTap: _toggleSatellite,

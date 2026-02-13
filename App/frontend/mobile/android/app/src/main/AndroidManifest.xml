@@ -16,7 +16,7 @@
         <!-- api: AIzaSyDknBihizC878ul-j9Z4GwEjuUsFHzuU-o   -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value=""/>
+            android:value="AIzaSyDknBihizC878ul-j9Z4GwEjuUsFHzuU-o"/>
         <activity
             android:name=".MainActivity"
             android:exported="true"

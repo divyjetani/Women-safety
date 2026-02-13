@@ -687,4 +687,21 @@ class ApiService {
     });
   }
 
+  static Future<Map<String, dynamic>> fetchSafetyScore({
+    required double lat,
+    required double lng,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/safety-score'),
+        headers: await _headers(withAuth: true), // or false if no auth needed
+        body: jsonEncode({
+          "latitude": lat,
+          "longitude": lng,
+        }),
+      );
+    });
+  }
+
+
 }

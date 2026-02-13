@@ -1,0 +1,24 @@
+App/frontend/mobile/lib/
+    app/
+        app.dart
+        auth_provider.dart
+        theme_provider.dart
+        theme.dart
+    models/
+        analytics_model.dart
+        bubble_model.dart
+        models.dart (which includes all other models, if needed create new file for new model)
+    network/
+        bubble_api.dart
+        dio_client.dart
+        dio_error.dart
+    screens/
+        all screens are in this dir
+    services/
+        api_service.dart
+        and other services files
+    widgets/
+        all widgets
+    conn_url.dart
+    main.dart
+    
