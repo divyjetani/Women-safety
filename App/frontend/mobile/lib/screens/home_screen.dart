@@ -32,6 +32,10 @@ import 'package:mobile/widgets/recent_activity_details.dart';
 import 'package:mobile/screens/anonymous_recording_screen.dart';
 import 'package:mobile/screens/fake_call_screen.dart';
 
+import 'package:flutter/services.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:mobile/services/websocket_service.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -57,11 +61,73 @@ class _HomeScreenState extends State<HomeScreen> {
   String _email = "Loading...";
   int _userId = 0;
 
+  static const MethodChannel _safetyChannel = MethodChannel('safety_service');
+
+  bool _backgroundSafetyOn = false;
+
+
   final _appLinks = AppLinks();
+
+  Future<void> _toggleBackgroundSafety() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_backgroundSafetyOn) {
+      // 🛑 STOP sharing
+      await _safetyChannel.invokeMethod('stopService');
+      await WebSocketService().close();
+      await prefs.setBool('bg_safety_on', false);
+
+      setState(() {
+        _backgroundSafetyOn = false;
+      });
+
+      return;
+    }
+
+    // ▶️ START sharing → ask permissions first
+    final mic = await Permission.microphone.request();
+    final location = await Permission.location.request();
+
+    if (!mic.isGranted || !location.isGranted) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Microphone & location permission required'),
+        ),
+      );
+      return;
+    }
+
+    await _safetyChannel.invokeMethod('startService');
+    // open websocket when starting monitoring (native service sends audio from Kotlin)
+    await WebSocketService().connect();
+    await prefs.setBool('bg_safety_on', true);
+
+    setState(() {
+      _backgroundSafetyOn = true;
+    });
+  }
+
 
   @override
   void initState() {
     super.initState();
+    _loadBackgroundSafetyState();
+
+    // ✅ Listen for service stop callback from native code
+    _safetyChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onServiceStopped') {
+        if (mounted) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('bg_safety_on', false);
+          setState(() {
+            _backgroundSafetyOn = false;
+          });
+        }
+      }
+      return null;
+    });
 
     _appLinks.uriLinkStream.listen((uri) {
       if (uri != null && uri.host == 'join') {
@@ -76,6 +142,14 @@ class _HomeScreenState extends State<HomeScreen> {
       _loadHomeData();
     });
   }
+
+  Future<void> _loadBackgroundSafetyState() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _backgroundSafetyOn = prefs.getBool('bg_safety_on') ?? false;
+    });
+  }
+
 
   @override
   void dispose() {
@@ -801,13 +875,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               _quickActionTile(
-                label: "Add\nGuardian",
-                icon: Icons.person_add,
-                color: AppTheme.accentColor,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => QuickActionDetailsScreen(userId: _userId, action: "add_guardian")),
-                ),
+                label: _backgroundSafetyOn
+                    ? "Stop\nMonitoring"
+                    : "Start\nMonitoring",
+                icon: _backgroundSafetyOn
+                    ? Icons.stop_circle
+                    : Icons.mic,
+                color: _backgroundSafetyOn
+                    ? AppTheme.dangerColor
+                    : AppTheme.successColor,
+                onTap: _toggleBackgroundSafety,
               ),
               _quickActionTile(
                 label: "Alert\nPolice",

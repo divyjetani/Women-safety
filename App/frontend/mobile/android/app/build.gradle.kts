@@ -10,6 +10,7 @@ dependencies{
     implementation(platform("com.google.firebase:firebase-bom:34.8.0"))
     implementation("com.google.firebase:firebase-analytics")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
 
 android {

@@ -43,6 +43,7 @@ void _runMainApp() async {
   }
 
   runApp(const SafeGuardApp());
+
 }
 
 // Splash Screen Widget

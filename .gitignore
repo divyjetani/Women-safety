@@ -10,6 +10,7 @@
 App/backend/uploads/
 App/frontend/web/node_modules/
 App/backend/models/
+App/backend/audio_chunks/
 
 # Flutter repo-specific
 /bin/cache/

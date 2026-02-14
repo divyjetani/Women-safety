@@ -17,6 +17,15 @@ import pandas as pd
 import numpy as np
 import joblib
 from sklearn.metrics.pairwise import haversine_distances
+from fastapi import WebSocket, WebSocketDisconnect
+from loguru import logger
+import time
+import wave
+import struct
+import asyncio
+import logging
+
+THREAT_SCORE_THRESHOLD = 3
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyBj0oIAl_dY17Xu2f9X04AwO5AmCg1GAjQ") # from main gmail acc
 gemini_model = "gemini-2.5-flash"
@@ -262,7 +271,11 @@ QUICK_ACTIONS_DB = {
 # ============================================================
 @app.get("/")
 def read_root():
+    print("log is printing")
+    logger.info("log info is working")
+    
     return {"message": "SafeGuard API is running ✅"}
+
 
 
 # -----------------------------
@@ -1164,9 +1177,167 @@ def list_sos(group_id: str):
         raise HTTPException(status_code=404, detail="Group not found")
     return {"group_id": group_id, "events": SOS_EVENTS[group_id]}
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# =========================
+# AUDIO CONFIG
+# =========================
+CHANNELS = 1
+SAMPLE_WIDTH = 2          # 16-bit PCM
+SAMPLE_RATE = 16000
+SAVE_INTERVAL = 10        # ✅ SAVE EVERY 10 SECONDS
+
+AUDIO_DIR = "audio_chunks"
+os.makedirs(AUDIO_DIR, exist_ok=True)
+
+# =========================
+# WAV SAVE HELPER
+# =========================
+def save_wav(path, samples):
+    if not samples:
+        return
+
+    with wave.open(path, "wb") as wf:
+        wf.setnchannels(CHANNELS)
+        wf.setsampwidth(SAMPLE_WIDTH)
+        wf.setframerate(SAMPLE_RATE)
+
+        pcm_bytes = struct.pack(
+            "<" + "h" * len(samples),
+            *samples
+        )
+        wf.writeframes(pcm_bytes)
+
+# =========================
+# WEBSOCKET ENDPOINT
+# =========================
+@app.websocket("/ws")
+async def websocket_endpoint(ws: WebSocket):
+    await ws.accept()
+    logger.info("🟢 Client connected")
+    print("🔥 ENTERED WS HANDLER")
+
+    audio_buffer: list[int] = []
+    last_save_time = time.time()
+    threat_score = 0
+
+    try:
+        while True:
+            msg = await ws.receive()
+
+            # =========================
+            # DISCONNECT
+            # =========================
+            if msg["type"] == "websocket.disconnect":
+                logger.warning("🔴 Client disconnected")
+                break
+
+            # =========================
+            # BINARY AUDIO (PCM)
+            # =========================
+            if msg.get("bytes") is not None:
+                b = msg["bytes"]
+                sample_count = len(b) // 2
+
+                samples = struct.unpack(
+                    "<" + "h" * sample_count,
+                    b
+                )
+                audio_buffer.extend(samples)
+
+                logger.info(
+                    f"🎧 Audio received | bytes={len(b)} | "
+                    f"samples={sample_count} | "
+                    f"buffer_samples={len(audio_buffer)}"
+                )
+
+                # critical: let event loop breathe
+                await asyncio.sleep(0)
+                continue
+
+            # =========================
+            # TEXT / JSON
+            # =========================
+            if msg.get("text") is None:
+                continue
+
+            try:
+                payload = json.loads(msg["text"])
+            except Exception:
+                logger.warning("⚠️ Received non-JSON text frame")
+                continue
+
+            if payload.get("type") == "proximity":
+                value = payload.get("value", 0)
+                if value < 2.0:
+                    threat_score += 1
+                logger.info(f"📏 Proximity received | value={value}")
+
+            # =========================
+            # SAVE AUDIO EVERY 10s
+            # =========================
+            now = time.time()
+
+            if now - last_save_time >= SAVE_INTERVAL and audio_buffer:
+                filename = os.path.join(
+                    AUDIO_DIR,
+                    f"audio_{int(now)}.wav"
+                )
+
+                save_wav(filename, audio_buffer)
+
+                duration = len(audio_buffer) / SAMPLE_RATE
+                logger.info(
+                    f"💾 Audio saved | file={filename} | "
+                    f"samples={len(audio_buffer)} | "
+                    f"duration={duration:.2f}s"
+                )
+
+                audio_buffer.clear()
+                last_save_time = now
+
+            # =========================
+            # THREAT ALERT
+            # =========================
+            if threat_score >= 3:
+                logger.warning("🚨 THREAT DETECTED")
+                await ws.send_json({
+                    "threat": True,
+                    "confidence": threat_score
+                })
+                threat_score = 0
+
+    except WebSocketDisconnect as e:
+        logger.warning(f"🔴 WS disconnect code={e.code}")
+
+    except Exception as e:
+        logger.exception(f"❌ WS error: {e}")
+
+    finally:
+        # =========================
+        # FLUSH REMAINING AUDIO
+        # =========================
+        if audio_buffer:
+            filename = os.path.join(
+                AUDIO_DIR,
+                f"audio_{int(time.time())}_final.wav"
+            )
+            save_wav(filename, audio_buffer)
+
+            duration = len(audio_buffer) / SAMPLE_RATE
+            logger.info(
+                f"💾 Final audio saved | file={filename} | "
+                f"duration={duration:.2f}s"
+            )
+        
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 # uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
