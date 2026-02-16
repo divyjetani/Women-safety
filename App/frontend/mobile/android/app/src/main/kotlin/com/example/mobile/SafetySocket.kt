@@ -57,7 +57,7 @@ object SafetySocket {
         Log.i("SafetySocket", "🔧 Opening WebSocket")
 
         val request = Request.Builder()
-            .url("ws://10.124.130.13:8000/ws") // emulator → host
+            .url("ws://10.105.15.13:8000/ws") // emulator → host
             .build()
 
         socket = client!!.newWebSocket(request, object : WebSocketListener() {

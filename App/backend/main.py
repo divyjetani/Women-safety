@@ -1219,11 +1219,41 @@ def save_wav(path, samples):
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     logger.info("🟢 Client connected")
-    print("🔥 ENTERED WS HANDLER")
 
-    audio_buffer: list[int] = []
-    last_save_time = time.time()
+    audio_buffer: List[int] = []
+    buffer_lock = asyncio.Lock()
     threat_score = 0
+    running = True
+
+    # =========================
+    # Background periodic saver
+    # =========================
+    async def periodic_saver():
+        nonlocal running
+        while running:
+            await asyncio.sleep(SAVE_INTERVAL)
+
+            async with buffer_lock:
+                if not audio_buffer:
+                    continue
+
+                chunk = audio_buffer.copy()
+                audio_buffer.clear()
+
+            filename = os.path.join(
+                AUDIO_DIR,
+                f"audio_{int(time.time())}.wav"
+            )
+
+            save_wav(filename, chunk)
+
+            duration = len(chunk) / SAMPLE_RATE
+            logger.info(
+                f"💾 Saved chunk | file={filename} | "
+                f"duration={duration:.2f}s"
+            )
+
+    saver_task = asyncio.create_task(periodic_saver())
 
     try:
         while True:
@@ -1237,7 +1267,7 @@ async def websocket_endpoint(ws: WebSocket):
                 break
 
             # =========================
-            # BINARY AUDIO (PCM)
+            # AUDIO (PCM BYTES)
             # =========================
             if msg.get("bytes") is not None:
                 b = msg["bytes"]
@@ -1247,93 +1277,65 @@ async def websocket_endpoint(ws: WebSocket):
                     "<" + "h" * sample_count,
                     b
                 )
-                audio_buffer.extend(samples)
 
-                logger.info(
-                    f"🎧 Audio received | bytes={len(b)} | "
-                    f"samples={sample_count} | "
-                    f"buffer_samples={len(audio_buffer)}"
-                )
+                async with buffer_lock:
+                    audio_buffer.extend(samples)
 
-                # critical: let event loop breathe
-                await asyncio.sleep(0)
                 continue
 
             # =========================
-            # TEXT / JSON
+            # JSON / TEXT
             # =========================
-            if msg.get("text") is None:
-                continue
+            if msg.get("text") is not None:
+                try:
+                    payload = json.loads(msg["text"])
+                except Exception:
+                    continue
 
-            try:
-                payload = json.loads(msg["text"])
-            except Exception:
-                logger.warning("⚠️ Received non-JSON text frame")
-                continue
+                if payload.get("type") == "proximity":
+                    value = payload.get("value", 0)
+                    if value < 2.0:
+                        threat_score += 1
 
-            if payload.get("type") == "proximity":
-                value = payload.get("value", 0)
-                if value < 2.0:
-                    threat_score += 1
-                logger.info(f"📏 Proximity received | value={value}")
+                if threat_score >= 3:
+                    await ws.send_json({
+                        "threat": True,
+                        "confidence": threat_score
+                    })
+                    threat_score = 0
 
-            # =========================
-            # SAVE AUDIO EVERY 10s
-            # =========================
-            now = time.time()
-
-            if now - last_save_time >= SAVE_INTERVAL and audio_buffer:
-                filename = os.path.join(
-                    AUDIO_DIR,
-                    f"audio_{int(now)}.wav"
-                )
-
-                save_wav(filename, audio_buffer)
-
-                duration = len(audio_buffer) / SAMPLE_RATE
-                logger.info(
-                    f"💾 Audio saved | file={filename} | "
-                    f"samples={len(audio_buffer)} | "
-                    f"duration={duration:.2f}s"
-                )
-
-                audio_buffer.clear()
-                last_save_time = now
-
-            # =========================
-            # THREAT ALERT
-            # =========================
-            if threat_score >= 3:
-                logger.warning("🚨 THREAT DETECTED")
-                await ws.send_json({
-                    "threat": True,
-                    "confidence": threat_score
-                })
-                threat_score = 0
-
-    except WebSocketDisconnect as e:
-        logger.warning(f"🔴 WS disconnect code={e.code}")
+    except WebSocketDisconnect:
+        logger.warning("🔴 WebSocketDisconnect")
 
     except Exception as e:
         logger.exception(f"❌ WS error: {e}")
 
     finally:
-        # =========================
-        # FLUSH REMAINING AUDIO
-        # =========================
-        if audio_buffer:
-            filename = os.path.join(
-                AUDIO_DIR,
-                f"audio_{int(time.time())}_final.wav"
-            )
-            save_wav(filename, audio_buffer)
+        # Stop background saver
+        running = False
+        saver_task.cancel()
+        try:
+            await saver_task
+        except asyncio.CancelledError:
+            pass
 
-            duration = len(audio_buffer) / SAMPLE_RATE
-            logger.info(
-                f"💾 Final audio saved | file={filename} | "
-                f"duration={duration:.2f}s"
-            )
+        # Flush remaining audio safely
+        async with buffer_lock:
+            if audio_buffer:
+                filename = os.path.join(
+                    AUDIO_DIR,
+                    f"audio_{int(time.time())}_final.wav"
+                )
+                save_wav(filename, audio_buffer)
+
+                duration = len(audio_buffer) / SAMPLE_RATE
+                logger.info(
+                    f"💾 Final flush saved | duration={duration:.2f}s"
+                )
+
+        logger.info("🛑 WS connection fully closed")
         
+             
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
