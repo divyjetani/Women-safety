@@ -1,0 +1,118 @@
+.settings-page {
+  animation: fadeIn 0.6s ease-out;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 2rem;
+}
+
+.settings-section {
+  animation: fadeInUp 0.6s ease-out backwards;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.section-header svg {
+  color: var(--primary);
+}
+
+.section-header h3 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.setting-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  transition: var(--transition-base);
+}
+
+.setting-item:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-secondary);
+}
+
+.setting-info {
+  flex: 1;
+}
+
+.setting-info h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 0.375rem;
+}
+
+.setting-info p {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.toggle-switch {
+  width: 60px;
+  height: 32px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border-color);
+  border-radius: 16px;
+  cursor: pointer;
+  position: relative;
+  transition: var(--transition-base);
+  flex-shrink: 0;
+}
+
+.toggle-switch.active {
+  background: var(--safe-green);
+  border-color: var(--safe-green);
+}
+
+.toggle-slider {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  background: white;
+  border-radius: 50%;
+  transition: var(--transition-base);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch.active .toggle-slider {
+  transform: translateX(28px);
+}
+
+.toggle-switch:hover {
+  transform: scale(1.05);
+}
+
+@media (max-width: 768px) {
+  .setting-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .toggle-switch {
+    align-self: flex-end;
+  }
+}
