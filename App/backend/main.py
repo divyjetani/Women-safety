@@ -18,6 +18,7 @@ from routes import (
     groups,
     ai,
     websocket,
+    bubble,
 )
 
 app = FastAPI(
@@ -53,6 +54,7 @@ app.include_router(help.router)
 app.include_router(safety_score.router)
 app.include_router(analytics.router)
 app.include_router(groups.router)
+app.include_router(bubble.router)
 app.include_router(ai.router)
 app.include_router(websocket.router)
 

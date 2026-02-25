@@ -4,16 +4,19 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:mobile/services/api_service.dart';
 import 'package:mobile/services/group_storage.dart';
+import 'package:mobile/services/bubble_websocket_service.dart';
+import 'package:mobile/services/background_location_service.dart';
 import 'package:mobile/widgets/bubble_info_sheet.dart';
 import 'package:mobile/widgets/create_bubble_dialog.dart';
+import 'package:mobile/widgets/join_bubble_dialog.dart';
 import 'package:mobile/widgets/map_search_bar.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/bubble_model.dart';
 import '../services/location_storage.dart';
-import '../services/share_service.dart';
 import '../widgets/map_group_strip_left.dart';
 import '../widgets/map_incognito_strip_right.dart';
 import '../widgets/group_bubble_bar.dart';
@@ -81,13 +84,14 @@ class _MapScreenState extends State<MapScreen> {
 
   // groups
   late List<SafetyGroup> _groups;
-  late SafetyGroup _currentGroup;
+  SafetyGroup? _currentGroup;
 
-  // share service
-  final ShareService _shareService = ShareService();
+  // WebSocket for location sharing
+  BubbleWebSocketService? _wsService;
+  final Battery _battery = Battery();
 
-  // for sharing periodically
-  Timer? _shareTimer;
+  // for periodic location updates via WebSocket
+  Timer? _locationTimer;
 
   // default fallback if no last location
   final LatLng _defaultCenter = const LatLng(23.0293515, 72.5530625); // Delhi
@@ -127,51 +131,79 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
 
-    _groups = [
-      SafetyGroup(
-        id: "1",
-        name: "Family",
-        members: [
-          GroupMember(
-            id: "u1",
-            name: "Divy",
-            lat: 23.6145,
-            lng: 72.2098,
-          ),
-          GroupMember(
-            id: "u2",
-            name: "Mom",
-            lat: 23.6129,
-            lng: 72.2080,
-          ),
-        ],
-      ),
-    ];
-    _currentGroup = _groups.first;
+    // Static bubble commented out - use dynamic bubbles from backend
+    // _groups = [
+    //   SafetyGroup(
+    //     id: "1",
+    //     name: "Family",
+    //     members: [
+    //       GroupMember(
+    //         id: "u1",
+    //         name: "Divy",
+    //         lat: 23.6145,
+    //         lng: 72.2098,
+    //       ),
+    //       GroupMember(
+    //         id: "u2",
+    //         name: "Mom",
+    //         lat: 23.6129,
+    //         lng: 72.2080,
+    //       ),
+    //     ],
+    //   ),
+    // ];
+    // _currentGroup = _groups.first;
+    
+    _groups = [];
 
     _initOnOpen();
   }
 
   @override
   void dispose() {
-    _shareTimer?.cancel();
+    _locationTimer?.cancel();
+    _wsService?.disconnect();
     super.dispose();
   }
 
   Future<void> _initOnOpen() async {
-    final storedGroups = await GroupStorage.loadGroups();
+    // ✅ Fetch groups from backend
+    try {
+      final backendGroups = await ApiService.getUserBubbles();
+      final selectedId = await GroupStorage.loadSelectedGroup();
 
-    if (storedGroups.isNotEmpty) {
+      setState(() {
+        _groups = backendGroups;
+        if (backendGroups.isNotEmpty) {
+          _currentGroup = selectedId != null
+              ? backendGroups.firstWhere(
+                  (g) => g.id == selectedId,
+                  orElse: () => backendGroups.first,
+                )
+              : backendGroups.first;
+        }
+      });
+
+      // Save to local storage
+      await GroupStorage.saveGroups(backendGroups);
+      if (_currentGroup != null) {
+        await GroupStorage.saveSelectedGroup(_currentGroup!.id);
+      }
+    } catch (e) {
+      // Fallback to stored groups if backend fails
+      final storedGroups = await GroupStorage.loadGroups();
       final selectedId = await GroupStorage.loadSelectedGroup();
 
       setState(() {
         _groups = storedGroups;
-        _currentGroup = selectedId != null
-            ? storedGroups.firstWhere(
-              (g) => g.id == selectedId,
-          orElse: () => storedGroups.first,
-        )
-            : storedGroups.first;
+        if (storedGroups.isNotEmpty) {
+          _currentGroup = selectedId != null
+              ? storedGroups.firstWhere(
+                  (g) => g.id == selectedId,
+                  orElse: () => storedGroups.first,
+                )
+              : storedGroups.first;
+        }
       });
     }
 
@@ -186,24 +218,110 @@ class _MapScreenState extends State<MapScreen> {
 
     setState(() => _loadingLocation = false);
 
-    // ✅ start sharing loop (every 7 sec)
-    _startSharingLoop();
+    // ✅ start WebSocket location sharing
+    _startLocationSharing();
     await _updateMarkers();
   }
 
-  void _startSharingLoop() {
-    _shareTimer?.cancel();
-    _shareTimer = Timer.periodic(const Duration(seconds: 7), (_) async {
-      final loc = _myLocation;
-      if (loc == null) return;
+  /// ✅ Start both WebSocket and background location sharing
+  void _startLocationSharing() async {
+    _startWebSocketSharing();
+    
+    // Also start background location sharing
+    final group = _currentGroup;
+    if (group == null || group.code == null) return;
 
-      await _shareService.shareToGroup(
+    try {
+      final user = await ApiService.getCurrentUser();
+      if (user == null) return;
+
+      await BackgroundLocationService.startBackgroundLocationSharing(
+        bubbleCode: group.code!,
+        userId: user.id,
         incognito: _incognito,
-        groupId: _currentGroup.id,
-        lat: loc.latitude,
-        lng: loc.longitude,
       );
-    });
+
+      print('✅ Background location sharing started for bubble: ${group.name}');
+    } catch (e) {
+      print('❌ Error starting background location sharing: $e');
+    }
+  }
+
+  void _startWebSocketSharing() async {
+    _locationTimer?.cancel();
+    _wsService?.disconnect();
+
+    final group = _currentGroup;
+    if (group == null || group.code == null) return;
+
+    try {
+      final user = await ApiService.getCurrentUser();
+      if (user == null) return;
+
+      // Initialize WebSocket
+      _wsService = BubbleWebSocketService(
+        bubbleCode: group.code!,
+        userId: user.id,
+      );
+
+      // Set up callbacks
+      _wsService!.onLocationUpdate = (members) {
+        if (!mounted) return;
+        
+        setState(() {
+          // Update current group members with new locations
+          if (_currentGroup != null) {
+            final updatedMembers = members.map((m) {
+              return GroupMember(
+                id: m.userId.toString(),
+                name: m.name,
+                lat: m.lat ?? 0.0,
+                lng: m.lng ?? 0.0,
+                battery: m.battery,
+              );
+            }).toList();
+            
+            _currentGroup = SafetyGroup(
+              id: _currentGroup!.id,
+              name: _currentGroup!.name,
+              members: updatedMembers,
+              icon: _currentGroup!.icon,
+              color: _currentGroup!.color,
+              code: _currentGroup!.code,
+            );
+          }
+        });
+        _updateMarkers();
+      };
+
+      _wsService!.onError = (error) {
+        print('WebSocket error: $error');
+      };
+
+      _wsService!.onConnectionChanged = (connected) {
+        print('WebSocket connection: $connected');
+      };
+
+      // Connect
+      await _wsService!.connect();
+
+      // Start periodic location updates via WebSocket
+      _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+        if (_incognito) return;
+        
+        final loc = _myLocation;
+        if (loc == null || _wsService == null || !_wsService!.isConnected) return;
+
+        final battery = await _battery.batteryLevel;
+        _wsService!.shareLocation(
+          lat: loc.latitude,
+          lng: loc.longitude,
+          battery: battery,
+        );
+      });
+    } catch (e) {
+      print('Error starting WebSocket: $e');
+    }
   }
 
   Future<void> _goToMyLocation({bool showSnackOnFail = true}) async {
@@ -280,11 +398,14 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> _updateMarkers() async {
     final Set<Marker> newMarkers = {};
+    
+    // Get current user
+    final user = await ApiService.getCurrentUser();
 
     // 🔵 My location
-    if (_myLocation != null) {
+    if (_myLocation != null && user != null) {
       final myIcon = await _letterMarker(
-        "D",
+        user.username[0].toUpperCase(),
         Colors.blue,
       );
 
@@ -293,24 +414,128 @@ class _MapScreenState extends State<MapScreen> {
           markerId: const MarkerId("me"),
           position: _myLocation!,
           icon: myIcon,
+          infoWindow: const InfoWindow(title: "📍 Me"),
         ),
       );
     }
 
-    // 🟢 Bubble members
-    for (final m in _currentGroup.members) {
-      final icon = await _letterMarker(
-        m.name[0].toUpperCase(),
-        Colors.green,
-      );
+    // 🟢 Bubble members (exclude current user)
+    if (_currentGroup != null && user != null) {
+      // Use bubble's color if available, otherwise use green
+      Color memberColor = _currentGroup!.color != null 
+          ? Color(_currentGroup!.color!) 
+          : Colors.green;
+      
+      // Filter out current user and members without location
+      final otherMembers = _currentGroup!.members.where((m) {
+        return m.id != user.id.toString() && m.lat != 0.0 && m.lng != 0.0;
+      });
+          
+      for (final m in otherMembers) {
+        // Use different color for incognito members
+        final displayColor = m.incognito ? Colors.grey : memberColor;
+        final icon = await _letterMarker(
+          m.name[0].toUpperCase(),
+          displayColor,
+        );
+        
+        // Add incognito indicator to info window
+        final titleWithStatus = m.incognito 
+            ? "${m.name} (🔍 Incognito)" 
+            : m.name;
 
-      newMarkers.add(
-        Marker(
-          markerId: MarkerId(m.id),
-          position: LatLng(m.lat, m.lng),
-          icon: icon,
-        ),
-      );
+        newMarkers.add(
+          Marker(
+            markerId: MarkerId(m.id),
+            position: LatLng(m.lat, m.lng),
+            icon: icon,
+            infoWindow: InfoWindow(title: titleWithStatus),
+            onTap: () {
+              // Center map on tapped marker
+              _controller?.animateCamera(
+                CameraUpdate.newCameraPosition(
+                  CameraPosition(
+                    target: LatLng(m.lat, m.lng),
+                    zoom: 16,
+                  ),
+                ),
+              );
+              // Also show info in bottom sheet
+              showModalBottomSheet(
+                context: context,
+                builder: (_) => Container(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 24,
+                            child: Text(m.name[0].toUpperCase()),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  m.name,
+                                  style: Theme.of(context).textTheme.titleMedium,
+                                ),
+                                if (m.incognito)
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.visibility_off,
+                                        size: 14,
+                                        color: Theme.of(context).primaryColor,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Text("Incognito Mode"),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            color: Colors.red,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              "${m.lat.toStringAsFixed(4)}, ${m.lng.toStringAsFixed(4)}",
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.battery_full,
+                            color: m.battery > 20 ? Colors.green : Colors.red,
+                          ),
+                          const SizedBox(width: 8),
+                          Text("Battery: ${m.battery}%"),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      }
     }
 
     // 🔴 Temp selection pin
@@ -361,18 +586,39 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  void _showInviteDialog(String link) {
+  void _showCodeDialog(String code) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text("Bubble Created 🎉"),
-        content: SelectableText(link),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text("Share this code with others to join:"),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).primaryColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: SelectableText(
+                code,
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 4,
+                ),
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () {
-              Share.share(link); // use share_plus
+              Share.share("Join my safety bubble with code: $code");
             },
-            child: const Text("Share"),
+            child: const Text("Share Code"),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -629,8 +875,55 @@ class _MapScreenState extends State<MapScreen> {
                           _groups.insert(0, res.group);
                           _currentGroup = res.group;
                         });
+                        
+                        // Save groups to storage
+                        await GroupStorage.saveGroups(_groups);
+                        await GroupStorage.saveSelectedGroup(res.group.id);
+                        
+                        // Restart WebSocket for new group
+                        _startWebSocketSharing();
+                        
+                        // Update markers
+                        await _updateMarkers();
 
-                        _showInviteDialog(res.inviteLink);
+                        _showCodeDialog(res.code);
+                      },
+                    ),
+                  );
+                },
+                onJoin: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => JoinBubbleDialog(
+                      onJoin: (code) async {
+                        try {
+                          final group = await ApiService.joinBubbleByCode(code);
+                          
+                          setState(() {
+                            // Check if group already exists
+                            final existingIndex = _groups.indexWhere((g) => g.id == group.id);
+                            if (existingIndex >= 0) {
+                              _groups[existingIndex] = group;
+                            } else {
+                              _groups.insert(0, group);
+                            }
+                            _currentGroup = group;
+                          });
+                          
+                          // Save groups to storage
+                          await GroupStorage.saveGroups(_groups);
+                          await GroupStorage.saveSelectedGroup(group.id);
+                          
+                          // Restart WebSocket for joined group
+                          _startWebSocketSharing();
+                          
+                          // Update markers
+                          await _updateMarkers();
+                          
+                          _showSnack('Joined bubble: ${group.name}');
+                        } catch (e) {
+                          _showSnack('Failed to join: $e');
+                        }
                       },
                     ),
                   );
@@ -638,6 +931,10 @@ class _MapScreenState extends State<MapScreen> {
                 onSelect: (g) async {
                   setState(() => _currentGroup = g);
                   await GroupStorage.saveSelectedGroup(g.id);
+                  
+                  // Restart WebSocket for selected group
+                  _startWebSocketSharing();
+                  
                   await _updateMarkers();
                 },
               ),
@@ -669,7 +966,70 @@ class _MapScreenState extends State<MapScreen> {
               incognito: _incognito,
               onChanged: (v) {
                 setState(() => _incognito = v);
+                
+                // Update background location service about incognito mode change
+                BackgroundLocationService.setIncognitoMode(v);
               },
+            ),
+
+            // ✅ Help icon button (top-right)
+            Positioned(
+              top: 120,
+              right: 10,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).cardColor.withOpacity(0.95),
+                  boxShadow: [
+                    BoxShadow(
+                      blurRadius: 8,
+                      color: Colors.black.withOpacity(0.2),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('💡 How Bubbles Work'),
+                          content: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _helpSection('Create', 'Tap "Create" to make a new safety bubble with friends or family.'),
+                                _helpSection('Join', 'Ask others for their 6-digit code and tap "Join" to enter an existing bubble.'),
+                                _helpSection('Share', 'Your location updates every 5 seconds to all bubble members (unless in Incognito mode).'),
+                                _helpSection('Color', 'Each bubble has its own color for easy identification on the map.'),
+                                _helpSection('Incognito', 'Turn ON to hide your location from the bubble while viewing others.'),
+                                _helpSection('Click', 'Tap any member\'s marker to see their location details and battery status.'),
+                                _helpSection('Battery', 'Red = Low battery (<20%), Green = Good battery (>20%).'),
+                              ],
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('Got it!'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Icon(
+                        Icons.help_outline,
+                        size: 22,
+                        color: Theme.of(context).primaryColor,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
 
             // ✅ Map floating controls (bottom-right)
@@ -768,7 +1128,16 @@ class _MapScreenState extends State<MapScreen> {
                     shape: const RoundedRectangleBorder(
                       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-                    builder: (_) => BubbleInfoSheet(group: _currentGroup),
+                    builder: (_) => BubbleInfoSheet(
+                      group: _currentGroup,
+                      onNavigateToMember: (location) {
+                        _controller?.animateCamera(
+                          CameraUpdate.newCameraPosition(
+                            CameraPosition(target: location, zoom: _zoom),
+                          ),
+                        );
+                      },
+                    ),
                   );
                 },
               )
@@ -776,6 +1145,32 @@ class _MapScreenState extends State<MapScreen> {
 
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _helpSection(String title, String description) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            description,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.grey,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1,3 +1,4 @@
+// lib/services/live_share_manager.dart
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:battery_plus/battery_plus.dart';

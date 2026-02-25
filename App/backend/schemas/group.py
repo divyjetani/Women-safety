@@ -13,7 +13,7 @@ class AddMemberReq(BaseModel):
 
 
 class ShareReq(BaseModel):
-    user_id: str
+    user_id: int
     lat: float
     lng: float
     battery: int = Field(ge=0, le=100)

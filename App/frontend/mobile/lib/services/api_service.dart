@@ -114,7 +114,7 @@ class ApiService {
   static Future<LoginResponse> login(String phone) async {
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
-        Uri.parse('$baseUrl/login'),
+        Uri.parse('$baseUrl/auth/login'),
         headers: await _headers(),
         body: jsonEncode({'phone': phone}),
       );
@@ -663,6 +663,12 @@ class ApiService {
     required int icon,
     required int color,
   }) async {
+    // Get current user info
+    final user = await getCurrentUser();
+    if (user == null) {
+      throw Exception('User not logged in');
+    }
+
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
         Uri.parse('$baseUrl/bubble/create'),
@@ -671,11 +677,53 @@ class ApiService {
           "name": name,
           "icon": icon,
           "color": color,
+          "admin_id": user.id,
+          "admin_name": user.username,
         }),
       );
     });
 
     return CreateBubbleResponse.fromJson(jsonResponse);
+  }
+
+  static Future<List<SafetyGroup>> getUserBubbles() async {
+    // Get current user info
+    final user = await getCurrentUser();
+    if (user == null) {
+      throw Exception('User not logged in');
+    }
+
+    final jsonResponse = await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/bubble/list/${user.id}'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+
+    final bubblesList = jsonResponse["bubbles"] as List<dynamic>? ?? [];
+    return bubblesList.map((json) => SafetyGroup.fromJson(json)).toList();
+  }
+
+  static Future<SafetyGroup> joinBubbleByCode(String code) async {
+    // Get current user info
+    final user = await getCurrentUser();
+    if (user == null) {
+      throw Exception('User not logged in');
+    }
+
+    final jsonResponse = await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/bubble/join'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          "code": code,
+          "user_id": user.id,
+          "name": user.username,
+        }),
+      );
+    });
+
+    return SafetyGroup.fromJson(jsonResponse["group"]);
   }
 
   static Future<Map<String, dynamic>> joinBubble(String token) async {

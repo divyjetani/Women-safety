@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/bubble_model.dart';
 
 class MapGroupMembersStripLeft extends StatefulWidget {
-  final SafetyGroup group;
+  final SafetyGroup? group;
   final ValueChanged<GroupMember> onMemberTap;
 
   const MapGroupMembersStripLeft({
@@ -23,6 +23,11 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    
+    // Don't show if no group is selected
+    if (widget.group == null) {
+      return const SizedBox.shrink();
+    }
 
     return Positioned(
       top: 120,
@@ -52,7 +57,7 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
                 const Icon(Icons.people, size: 18),
                 const SizedBox(width: 5),
                 Text(
-                  widget.group.members.length.toString(),
+                  widget.group!.members.length.toString(),
                   style: theme.textTheme.titleMedium
                       ?.copyWith(fontWeight: FontWeight.bold),
                 ),
@@ -79,7 +84,7 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
                 child: SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   child: Row(
-                    children: widget.group.members.map(_memberAvatar).toList(),
+                    children: widget.group!.members.map(_memberAvatar).toList(),
                   ),
                 ),
               ),
