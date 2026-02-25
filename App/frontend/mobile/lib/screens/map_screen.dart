@@ -8,6 +8,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:mobile/services/api_service.dart';
 import 'package:mobile/services/group_storage.dart';
 import 'package:mobile/services/bubble_websocket_service.dart';
+import 'package:mobile/services/background_location_service.dart';
 import 'package:mobile/widgets/bubble_info_sheet.dart';
 import 'package:mobile/widgets/create_bubble_dialog.dart';
 import 'package:mobile/widgets/join_bubble_dialog.dart';
@@ -130,7 +131,7 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
 
-    // Static bubble, use dynamic bubbles from backend
+    // Static bubble commented out - use dynamic bubbles from backend
     // _groups = [
     //   SafetyGroup(
     //     id: "1",
@@ -218,8 +219,32 @@ class _MapScreenState extends State<MapScreen> {
     setState(() => _loadingLocation = false);
 
     // ✅ start WebSocket location sharing
-    _startWebSocketSharing();
+    _startLocationSharing();
     await _updateMarkers();
+  }
+
+  /// ✅ Start both WebSocket and background location sharing
+  void _startLocationSharing() async {
+    _startWebSocketSharing();
+    
+    // Also start background location sharing
+    final group = _currentGroup;
+    if (group == null || group.code == null) return;
+
+    try {
+      final user = await ApiService.getCurrentUser();
+      if (user == null) return;
+
+      await BackgroundLocationService.startBackgroundLocationSharing(
+        bubbleCode: group.code!,
+        userId: user.id,
+        incognito: _incognito,
+      );
+
+      print('✅ Background location sharing started for bubble: ${group.name}');
+    } catch (e) {
+      print('❌ Error starting background location sharing: $e');
+    }
   }
 
   void _startWebSocketSharing() async {
@@ -898,7 +923,6 @@ class _MapScreenState extends State<MapScreen> {
                           _showSnack('Joined bubble: ${group.name}');
                         } catch (e) {
                           _showSnack('Failed to join: $e');
-                          rethrow;
                         }
                       },
                     ),
@@ -942,12 +966,15 @@ class _MapScreenState extends State<MapScreen> {
               incognito: _incognito,
               onChanged: (v) {
                 setState(() => _incognito = v);
+                
+                // Update background location service about incognito mode change
+                BackgroundLocationService.setIncognitoMode(v);
               },
             ),
 
             // ✅ Help icon button (top-right)
             Positioned(
-              top: 60,
+              top: 120,
               right: 10,
               child: Container(
                 decoration: BoxDecoration(
@@ -1101,7 +1128,16 @@ class _MapScreenState extends State<MapScreen> {
                     shape: const RoundedRectangleBorder(
                       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                     ),
-                    builder: (_) => BubbleInfoSheet(group: _currentGroup),
+                    builder: (_) => BubbleInfoSheet(
+                      group: _currentGroup,
+                      onNavigateToMember: (location) {
+                        _controller?.animateCamera(
+                          CameraUpdate.newCameraPosition(
+                            CameraPosition(target: location, zoom: _zoom),
+                          ),
+                        );
+                      },
+                    ),
                   );
                 },
               )
