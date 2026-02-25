@@ -39,44 +39,7 @@ class _AskAIBarState extends State<AskAIBar> {
         userId: widget.userId,
         question: question,
         detailed: detailed,
-      ).timeout(const Duration(seconds: 20));
-
-// ---------------example output of ai --------------
-//       final Map<String, dynamic> res = {
-//         "short_answer":
-//         "Stay alert, trust your instincts, and use nearby resources for safety.",
-//
-//         "detailed_answer": """
-// ## Personal Safety Guidance
-//
-// Staying safe requires **awareness, preparation, and quick decision-making**.
-//
-// ### While Moving Outside
-// - Stay in **well-lit and crowded areas**
-// - Avoid using headphones at high volume
-// - Share your **live location** with a trusted person
-//
-// ### Use Technology Smartly
-// - Keep your phone **charged**
-// - Enable **emergency SOS**
-// - Save local **police & emergency contacts**
-//
-// ### If You Sense Danger
-// - Trust your instincts — **leave immediately**
-// - Enter a nearby **shop, hospital, or police station**
-// - Call emergency services if needed
-//
-// ---
-// > Note: This is an AI generated response, If you are in any emergency then call on police helpline: 112 or women helpline: 181
-// """,
-//
-//         "tips": [
-//           "Avoid isolated shortcuts",
-//           "Keep emergency numbers on speed dial",
-//           "Inform someone when traveling late",
-//           "Carry basic self-defense tools"
-//         ]
-//       };
+      ).timeout(const Duration(seconds: 90));
 
       if (!mounted) return;
       setState(() => _sending = false);

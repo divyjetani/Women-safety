@@ -3,8 +3,9 @@ import '../models/bubble_model.dart';
 
 class GroupBubbleBar extends StatelessWidget {
   final List<SafetyGroup> groups;
-  final SafetyGroup currentGroup;
+  final SafetyGroup? currentGroup;
   final VoidCallback onCreate;
+  final VoidCallback onJoin;
   final ValueChanged<SafetyGroup> onSelect;
 
   const GroupBubbleBar({
@@ -12,6 +13,7 @@ class GroupBubbleBar extends StatelessWidget {
     required this.groups,
     required this.currentGroup,
     required this.onCreate,
+    required this.onJoin,
     required this.onSelect,
   });
 
@@ -27,6 +29,11 @@ class GroupBubbleBar extends StatelessWidget {
         children: [
           // ➕ Create bubble
           _createBubble(theme),
+
+          const SizedBox(width: 14),
+          
+          // 🔗 Join bubble
+          _joinBubble(theme),
 
           const SizedBox(width: 14),
 
@@ -55,9 +62,38 @@ class GroupBubbleBar extends StatelessWidget {
       ),
     );
   }
+  
+  Widget _joinBubble(ThemeData theme) {
+    return Center(
+      child: GestureDetector(
+        onTap: onJoin,
+        child: Column(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: theme.colorScheme.secondary.withOpacity(0.2),
+              child: Icon(Icons.group_add, color: theme.colorScheme.secondary, size: 28),
+            ),
+            const SizedBox(height: 6),
+            const Text("Join"),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _groupBubble(ThemeData theme, SafetyGroup group) {
-    final selected = group.id == currentGroup.id;
+    final selected = currentGroup != null && group.id == currentGroup!.id;
+    
+    // Use bubble's color if available, otherwise use default
+    Color bubbleColor = group.color != null 
+        ? Color(group.color!) 
+        : theme.primaryColor;
+    
+    // Use bubble's icon if available, otherwise use groups icon
+    IconData bubbleIcon = group.icon != null 
+        ? IconData(group.icon!, fontFamily: 'MaterialIcons')
+        : Icons.groups;
 
     return GestureDetector(
       onTap: () => onSelect(group),
@@ -69,10 +105,8 @@ class GroupBubbleBar extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 28,
-                  backgroundColor: selected
-                      ? theme.primaryColor.withOpacity(0.2)
-                      : theme.cardColor,
-                  child: const Icon(Icons.groups, size: 28),
+                  backgroundColor: bubbleColor.withOpacity(selected ? 0.2 : 0.08),
+                  child: Icon(bubbleIcon, size: 28, color: bubbleColor),
                 ),
 
                 // ✔ Selected badge
@@ -82,7 +116,7 @@ class GroupBubbleBar extends StatelessWidget {
                     top: 0,
                     child: CircleAvatar(
                       radius: 9,
-                      backgroundColor: theme.primaryColor,
+                      backgroundColor: bubbleColor,
                       child: const Icon(Icons.check,
                           size: 12, color: Colors.white),
                     ),
