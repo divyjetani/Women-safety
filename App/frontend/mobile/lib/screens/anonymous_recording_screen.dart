@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 
 import '../app/theme.dart';
 import '../services/api_service.dart';
+import '../widgets/app_snackbar.dart';
 
 class AnonymousRecordingScreen extends StatefulWidget {
   const AnonymousRecordingScreen({super.key});
@@ -40,6 +41,8 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
   // ✅ images + location
   String _startImagePath = "";
   String _endImagePath = "";
+  bool _frontRecordingStarted = false;
+  bool _backRecordingStarted = false;
 
   Position? _startPos;
   Position? _endPos;
@@ -96,13 +99,27 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         orElse: () => cams.first,
       );
 
-      _frontCam = CameraController(front, ResolutionPreset.medium, enableAudio: true);
-      _backCam = CameraController(back, ResolutionPreset.medium, enableAudio: true);
+      CameraController? frontController;
+      CameraController? backController;
 
-      await _frontCam!.initialize();
-      await _backCam!.initialize();
+      try {
+        frontController = CameraController(front, ResolutionPreset.medium, enableAudio: true);
+        await frontController.initialize();
+      } catch (e) {
+        debugPrint("Front camera init failed: $e");
+      }
 
-      setState(() => _camsReady = true);
+      try {
+        backController = CameraController(back, ResolutionPreset.medium, enableAudio: true);
+        await backController.initialize();
+      } catch (e) {
+        debugPrint("Back camera init failed: $e");
+      }
+
+      _frontCam = frontController;
+      _backCam = backController;
+
+      setState(() => _camsReady = _frontCam != null || _backCam != null);
     } catch (e) {
       setState(() => _camsReady = false);
       debugPrint("Camera init failed: $e");
@@ -159,13 +176,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
 
   void _showSnack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: AppTheme.primaryColor,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    AppSnackBar.show(context, msg);
   }
 
   void _startTimerFresh() {
@@ -185,11 +196,16 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       return;
     }
 
-    if (!_camsReady || _frontCam == null || _backCam == null) return;
+    if (!_camsReady) {
+      _showSnack("Camera not ready ❌");
+      return;
+    }
     if (_isRecording) return;
 
     try {
       setState(() => _isRecording = true);
+      _frontRecordingStarted = false;
+      _backRecordingStarted = false;
       _startedAt = DateTime.now().toIso8601String();
 
       _startPos = await _getLocation();
@@ -199,8 +215,29 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       // await _frontCam!.prepareForVideoRecording();
       // await _backCam!.prepareForVideoRecording();
 
-      await _frontCam!.startVideoRecording();
-      await _backCam!.startVideoRecording();
+      try {
+        if (_frontCam != null && _frontCam!.value.isInitialized) {
+          await _frontCam!.startVideoRecording();
+          _frontRecordingStarted = true;
+        }
+      } catch (e) {
+        debugPrint("Front start failed: $e");
+      }
+
+      try {
+        if (_backCam != null && _backCam!.value.isInitialized) {
+          await _backCam!.startVideoRecording();
+          _backRecordingStarted = true;
+        }
+      } catch (e) {
+        debugPrint("Back start failed: $e");
+      }
+
+      if (!_frontRecordingStarted && !_backRecordingStarted) {
+        setState(() => _isRecording = false);
+        _showSnack("Could not start camera recording ❌");
+        return;
+      }
 
       _startTimer();
     } catch (e) {
@@ -228,7 +265,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
 
       // ✅ stop safely
       try {
-        if (_frontCam != null && _frontCam!.value.isRecordingVideo) {
+        if (_frontCam != null && _frontRecordingStarted) {
           frontFile = await _frontCam!.stopVideoRecording();
         }
       } catch (e) {
@@ -236,12 +273,15 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       }
 
       try {
-        if (_backCam != null && _backCam!.value.isRecordingVideo) {
+        if (_backCam != null && _backRecordingStarted) {
           backFile = await _backCam!.stopVideoRecording();
         }
       } catch (e) {
         debugPrint("Back stop failed: $e");
       }
+
+      _frontRecordingStarted = false;
+      _backRecordingStarted = false;
 
       if (frontFile == null && backFile == null) {
         _showSnack("Recording failed: no video file generated ❌");
@@ -276,6 +316,18 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         return;
       }
 
+      final normalized = await _normalizeAnonymousMedia(
+        frontVideoPath: frontSaved,
+        backVideoPath: backSaved,
+        startImagePath: _startImagePath,
+        endImagePath: _endImagePath,
+      );
+
+      if (normalized == null) {
+        _showSnack("Recording saved but video file missing ❌");
+        return;
+      }
+
       // ✅ Create object
       final recordingObj = {
         "id": id,
@@ -283,11 +335,11 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         "endedAt": _endedAt,
         "duration": _seconds,
 
-        "frontVideoPath": frontSaved,
-        "backVideoPath": backSaved,
+        "frontVideoPath": normalized["frontVideoPath"],
+        "backVideoPath": normalized["backVideoPath"],
 
-        "startImagePath": _startImagePath,
-        "endImagePath": _endImagePath,
+        "startImagePath": normalized["startImagePath"],
+        "endImagePath": normalized["endImagePath"],
 
         "startLat": _startPos?.latitude.toString() ?? "",
         "startLng": _startPos?.longitude.toString() ?? "",
@@ -315,6 +367,49 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     }
 
     await _reInitCamerasAfterRecording();
+  }
+
+  Future<Map<String, String>?> _normalizeAnonymousMedia({
+    required String frontVideoPath,
+    required String backVideoPath,
+    required String startImagePath,
+    required String endImagePath,
+  }) async {
+    Future<bool> exists(String path) async {
+      if (path.isEmpty) return false;
+      return File(path).exists();
+    }
+
+    String front = frontVideoPath;
+    String back = backVideoPath;
+    String startImg = startImagePath;
+    String endImg = endImagePath;
+
+    final frontOk = await exists(front);
+    final backOk = await exists(back);
+    if (!frontOk && backOk) {
+      front = back;
+    } else if (!backOk && frontOk) {
+      back = front;
+    }
+
+    final finalFrontOk = await exists(front);
+    final finalBackOk = await exists(back);
+    if (!finalFrontOk || !finalBackOk) {
+      return null;
+    }
+
+    final startOk = await exists(startImg);
+    final endOk = await exists(endImg);
+    if (!startOk) startImg = "";
+    if (!endOk) endImg = "";
+
+    return {
+      "frontVideoPath": front,
+      "backVideoPath": back,
+      "startImagePath": startImg,
+      "endImagePath": endImg,
+    };
   }
 
   Future<void> _reInitCamerasAfterRecording() async {

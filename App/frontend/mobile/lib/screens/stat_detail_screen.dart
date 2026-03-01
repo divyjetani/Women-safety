@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile/services/analytics_api.dart';
 import 'package:mobile/models/analytics_models.dart';
 import '../app/theme.dart';
+import '../widgets/app_snackbar.dart';
 
 class StatDetailScreen extends StatefulWidget {
   final String statId;
@@ -37,9 +38,7 @@ class _StatDetailScreenState extends State<StatDetailScreen> {
       });
     } catch (e) {
       setState(() => loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to load detail: $e")),
-      );
+      AppSnackBar.show(context, "Failed to load detail: $e", type: AppSnackBarType.error);
     }
   }
 

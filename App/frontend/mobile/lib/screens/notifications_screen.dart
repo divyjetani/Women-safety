@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 
 import 'package:mobile/services/api_service.dart';
+import 'package:mobile/app/auth_provider.dart';
 import '../app/theme.dart';
+import '../widgets/app_snackbar.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -16,9 +19,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   String? errorMessage;
   List<Map<String, dynamic>> notifications = [];
 
-  // ✅ Replace with real logged-in user id (or pass it in constructor)
-  final int userId = 1;
-
   @override
   void initState() {
     super.initState();
@@ -27,12 +27,21 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _load() async {
     try {
+      final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+      if (user == null) {
+        setState(() {
+          loading = false;
+          errorMessage = 'Please login again to view notifications';
+        });
+        return;
+      }
+
       setState(() {
         loading = true;
         errorMessage = null;
       });
 
-      final data = await ApiService.getNotifications(userId);
+      final data = await ApiService.getNotifications(user.id);
 
       setState(() {
         notifications = data.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -48,11 +57,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Future<void> _markRead(int notificationId) async {
     try {
-      await ApiService.markNotificationRead(userId: userId, notificationId: notificationId);
+      final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+      if (user == null) {
+        AppSnackBar.show(context, 'Please login again to mark notifications', type: AppSnackBarType.warning);
+        return;
+      }
+
+      await ApiService.markNotificationRead(userId: user.id, notificationId: notificationId);
       _load();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
+      AppSnackBar.show(
+        context,
+        e.toString().replaceAll("Exception:", "").trim(),
+        type: AppSnackBarType.error,
       );
     }
   }

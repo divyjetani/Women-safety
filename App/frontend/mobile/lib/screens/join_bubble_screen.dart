@@ -1,6 +1,8 @@
 // lib/screens/join_bubble_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/models/bubble_model.dart';
+import 'package:mobile/app/auth_provider.dart';
 import 'package:mobile/services/bubble_api.dart';
 
 class JoinBubbleScreen extends StatefulWidget {
@@ -43,11 +45,22 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
     });
 
     try {
-      // TODO: Get actual user ID and name from auth service
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+
+      if (user == null) {
+        setState(() => _errorMessage = 'Please login again to join a bubble');
+        return;
+      }
+
+      final userName = (user.username?.trim().isNotEmpty ?? false)
+          ? user.username!.trim()
+          : user.email;
+
       final bubble = await BubbleAPI.joinBubble(
         code: code,
-        userId: 1, // Replace with actual user ID
-        userName: 'User', // Replace with actual user name
+        userId: user.id,
+        userName: userName,
       );
 
       setState(() {

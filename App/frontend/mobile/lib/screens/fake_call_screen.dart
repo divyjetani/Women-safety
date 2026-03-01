@@ -183,8 +183,11 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
       setState(() => _fakeCallRecordings.insert(0, result));
       await _saveRecordings();
 
-      // ✅ upload in background-like
-      await _uploadFakeCallRecording(result);
+      final videoPath = (result["backVideoPath"] ?? "") as String;
+      if (videoPath.isNotEmpty && await File(videoPath).exists()) {
+        // ✅ upload in background-like
+        await _uploadFakeCallRecording(result);
+      }
     }
   }
 
@@ -205,11 +208,16 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
       });
       await _saveRecordings();
 
+      final normalized = await _normalizeFakeCallMedia(item);
+      if (normalized == null) {
+        throw Exception("Required media files not found for upload");
+      }
+
       await ApiService.uploadFakeCallRecording(
         userId: userId,
-        backVideoPath: item["backVideoPath"],
-        startImagePath: item["startImagePath"],
-        endImagePath: item["endImagePath"],
+        backVideoPath: normalized["backVideoPath"]!,
+        startImagePath: normalized["startImagePath"]!,
+        endImagePath: normalized["endImagePath"]!,
         startedAt: item["startedAt"],
         endedAt: item["endedAt"],
         durationSeconds: item["duration"],
@@ -231,6 +239,37 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
       });
       await _saveRecordings();
     }
+  }
+
+  Future<Map<String, String>?> _normalizeFakeCallMedia(Map<String, dynamic> item) async {
+    Future<bool> exists(String path) async {
+      if (path.isEmpty) return false;
+      return File(path).exists();
+    }
+
+    String video = (item["backVideoPath"] ?? "") as String;
+    String startImg = (item["startImagePath"] ?? "") as String;
+    String endImg = (item["endImagePath"] ?? "") as String;
+
+    if (!await exists(startImg) && await exists(endImg)) {
+      startImg = endImg;
+    }
+    if (!await exists(endImg) && await exists(startImg)) {
+      endImg = startImg;
+    }
+
+    if (!await exists(video)) {
+      return null;
+    }
+
+    if (!await exists(startImg)) startImg = "";
+    if (!await exists(endImg)) endImg = "";
+
+    return {
+      "backVideoPath": video,
+      "startImagePath": startImg,
+      "endImagePath": endImg,
+    };
   }
 
   // =========================
@@ -694,14 +733,16 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
   String _startImagePath = "";
   String _endImagePath = "";
   String _backVideoPath = "";
+  bool _recordingStarted = false;
+  Future<void>? _cameraStartFuture;
+  bool _endingCall = false;
 
   @override
   void initState() {
     super.initState();
     _startedAt = DateTime.now().toIso8601String();
-    _startCallTimer();
     _listenProximity();
-    _initBackCameraAndStartRecording();
+    _cameraStartFuture = _initBackCameraAndStartRecording();
   }
 
   @override
@@ -771,18 +812,28 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
 
       await _camera!.prepareForVideoRecording();
       await _camera!.startVideoRecording();
+      _recordingStarted = true;
+      _startedAt = DateTime.now().toIso8601String();
+      _startCallTimer();
+
+      if (mounted) {
+        setState(() {
+          _seconds = 0;
+        });
+      }
     } catch (e) {
       debugPrint("Fake call camera init error: $e");
       setState(() => _cameraReady = false);
     }
   }
 
-  Future<void> _stopRecordingIfNeeded() async {
+  Future<bool> _stopRecordingIfNeeded() async {
     try {
-      if (_camera == null) return;
-      if (!_camera!.value.isRecordingVideo) return;
+      if (_camera == null) return false;
 
-      _videoFile = await _camera!.stopVideoRecording();
+      if (_recordingStarted && _camera!.value.isRecordingVideo) {
+        _videoFile = await _camera!.stopVideoRecording();
+      }
 
       _endedAt = DateTime.now().toIso8601String();
       _endPos = await _getLocation();
@@ -792,11 +843,19 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
       final folder = Directory("${dir.path}/fakecall_videos");
       if (!await folder.exists()) await folder.create(recursive: true);
 
-      _backVideoPath = "${folder.path}/back_${DateTime.now().millisecondsSinceEpoch}.mp4";
-      await File(_videoFile!.path).copy(_backVideoPath);
+      if (_videoFile != null) {
+        final source = File(_videoFile!.path);
+        if (await source.exists()) {
+          _backVideoPath = "${folder.path}/back_${DateTime.now().millisecondsSinceEpoch}.mp4";
+          await source.copy(_backVideoPath);
+        }
+      }
 
       await _camera?.dispose();
-    } catch (_) {}
+      return _backVideoPath.isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   void _listenProximity() {
@@ -817,7 +876,16 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
   }
 
   Future<void> _endCall() async {
-    await _stopRecordingIfNeeded();
+    if (_endingCall) return;
+    _endingCall = true;
+
+    try {
+      if (_cameraStartFuture != null) {
+        await _cameraStartFuture!.timeout(const Duration(seconds: 2));
+      }
+    } catch (_) {}
+
+    final hasVideo = await _stopRecordingIfNeeded();
 
     final now = DateTime.now();
 
@@ -828,7 +896,7 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
       "endedAt": _endedAt.isEmpty ? now.toIso8601String() : _endedAt,
       "duration": _seconds,
 
-      "backVideoPath": _backVideoPath,
+      "backVideoPath": hasVideo ? _backVideoPath : "",
       "startImagePath": _startImagePath,
       "endImagePath": _endImagePath,
 
@@ -837,8 +905,8 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
       "endLat": _endPos?.latitude.toString() ?? "",
       "endLng": _endPos?.longitude.toString() ?? "",
 
-      "uploadStatus": "pending",
-      "lastError": "",
+      "uploadStatus": hasVideo ? "pending" : "failed",
+      "lastError": hasVideo ? "" : "No video captured (camera not ready or stopped too quickly)",
     };
 
     if (!mounted) return;
@@ -913,8 +981,12 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
             ),
           ),
 
-          // ✅ proximity screen-off effect
-          if (_nearEar) Container(color: Colors.black),
+          // ✅ proximity screen-off effect (visual only, don't block end-call tap)
+          if (_nearEar)
+            IgnorePointer(
+              ignoring: true,
+              child: Container(color: Colors.black),
+            ),
         ],
       ),
     );

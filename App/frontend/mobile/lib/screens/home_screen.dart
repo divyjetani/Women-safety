@@ -17,6 +17,7 @@ import '../models/bubble_model.dart';
 import '../widgets/safety_card.dart';
 import '../widgets/stats_card.dart';
 import '../widgets/skeleton_loader_for_home.dart';
+import '../widgets/app_snackbar.dart';
 import '../app/theme.dart';
 
 // ✅ bottom sheet pages
@@ -39,6 +40,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:mobile/services/websocket_service.dart';
 import 'package:mobile/services/group_storage.dart';
 import 'package:mobile/services/background_location_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../app/main_tab_navigation.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -62,13 +64,15 @@ class _HomeScreenState extends State<HomeScreen> {
   static const Duration _apiTimeout = Duration(seconds: 12);
 
   // ✅ user info (cache first)
-  String _username = "User";
+  String _username = "Loading...";
   String _email = "Loading...";
   int _userId = 0;
 
   static const MethodChannel _safetyChannel = MethodChannel('safety_service');
 
   bool _backgroundSafetyOn = false;
+  bool _isRefreshingLiveScore = false;
+  bool _hasUnreadNotifications = false;
 
 
   final _appLinks = AppLinks();
@@ -96,11 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mic.isGranted || !location.isGranted) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Microphone & location permission required'),
-        ),
-      );
+      AppSnackBar.show(context, 'Microphone & location permission required', type: AppSnackBarType.warning);
       return;
     }
 
@@ -144,8 +144,28 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _authGuard();
       await _loadUserFromPrefsOrBackend();
+      await _loadUnreadNotificationState();
       _loadHomeData();
     });
+  }
+
+  Future<void> _loadUnreadNotificationState() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+      if (user == null) return;
+
+      final notifications = await ApiService.getNotifications(user.id);
+      final hasUnread = notifications.any((item) {
+        if (item is! Map<String, dynamic>) return false;
+        return item["read"] == false;
+      });
+
+      if (!mounted) return;
+      setState(() => _hasUnreadNotifications = hasUnread);
+    } catch (_) {
+      // keep previous state silently
+    }
   }
 
   Future<void> _loadBackgroundSafetyState() async {
@@ -179,13 +199,19 @@ class _HomeScreenState extends State<HomeScreen> {
   // ======================================================
   Future<void> _loadUserFromPrefsOrBackend() async {
     final prefs = await SharedPreferences.getInstance();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.currentUser;
+    if (user == null) return;
 
     final cachedName = prefs.getString("cached_user_name");
     final cachedEmail = prefs.getString("cached_user_email");
     final cachedUserId = prefs.getInt("cached_user_id");
 
-    // ✅ show instantly if cached
-    if (cachedName != null && cachedEmail != null && cachedUserId != null) {
+    // ✅ show instantly only when cache belongs to current logged-in user
+    if (cachedName != null &&
+        cachedEmail != null &&
+        cachedUserId != null &&
+        cachedUserId == user.id) {
       setState(() {
         _username = cachedName;
         _email = cachedEmail;
@@ -194,13 +220,17 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final user = authProvider.currentUser;
-    if (user == null) return;
+    if (cachedUserId != null && cachedUserId != user.id) {
+      await prefs.remove("cached_user_name");
+      await prefs.remove("cached_user_email");
+      await prefs.remove("cached_user_id");
+    }
 
     // ✅ fallback values instantly
     setState(() {
-      _username = user.username ?? "User";
+      _username = (user.username?.trim().isNotEmpty ?? false)
+          ? user.username!.trim()
+          : "Account";
       _email = user.email ?? "No email";
       _userId = user.id;
     });
@@ -209,8 +239,18 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final profileJson = await ApiService.getProfile(user.id);
 
-      final name = profileJson["name"] ?? user.username ?? "User";
-      final email = profileJson["email"] ?? user.email ?? "No email";
+      final fallbackName = (user.username?.trim().isNotEmpty ?? false)
+          ? user.username!.trim()
+          : "Account";
+
+      final profileNameRaw = (profileJson["name"] ?? "").toString().trim();
+      final profileEmailRaw = (profileJson["email"] ?? "").toString().trim().toLowerCase();
+      final authEmail = (user.email ?? "").trim().toLowerCase();
+
+      final email = authEmail.isNotEmpty ? authEmail : (profileEmailRaw.isNotEmpty ? profileEmailRaw : "No email");
+      final name = (profileNameRaw.isNotEmpty && profileNameRaw.toLowerCase() != "new user")
+          ? profileNameRaw
+          : fallbackName;
 
       await prefs.setString("cached_user_name", name);
       await prefs.setString("cached_user_email", email);
@@ -269,19 +309,8 @@ class _HomeScreenState extends State<HomeScreen> {
         ApiService.getRecentActivity(_userId),
       ]);
 
-      var stats = results[0] as SafetyStats;
+      final stats = results[0] as SafetyStats;
       final activities = results[1] as List<RecentActivity>;
-
-      final liveScore = await _fetchAndPersistCurrentSafetyScore();
-      if (liveScore != null) {
-        stats = SafetyStats(
-          safetyScore: liveScore,
-          safeZones: stats.safeZones,
-          alertsToday: stats.alertsToday,
-          checkins: stats.checkins,
-          sosUsed: stats.sosUsed,
-        );
-      }
 
       _timeoutTimer?.cancel();
       if (!mounted) return;
@@ -291,6 +320,8 @@ class _HomeScreenState extends State<HomeScreen> {
         _recentActivities = activities;
         _isLoading = false;
       });
+
+      _refreshLiveSafetyScoreInBackground();
     } catch (e) {
       _timeoutTimer?.cancel();
       if (!mounted) return;
@@ -311,9 +342,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!serviceEnabled) return null;
 
       var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
         return null;
@@ -321,6 +349,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 4),
       );
 
       final scoreResponse = await ApiService.fetchSafetyScore(
@@ -334,6 +363,30 @@ class _HomeScreenState extends State<HomeScreen> {
       return risk.round().clamp(0, 100);
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _refreshLiveSafetyScoreInBackground() async {
+    if (_isRefreshingLiveScore || _userId <= 0) return;
+    _isRefreshingLiveScore = true;
+
+    try {
+      final liveScore = await _fetchAndPersistCurrentSafetyScore();
+      if (!mounted || liveScore == null || _safetyStats == null) return;
+
+      if (_safetyStats!.safetyScore != liveScore) {
+        setState(() {
+          _safetyStats = SafetyStats(
+            safetyScore: liveScore,
+            safeZones: _safetyStats!.safeZones,
+            alertsToday: _safetyStats!.alertsToday,
+            checkins: _safetyStats!.checkins,
+            sosUsed: _safetyStats!.sosUsed,
+          );
+        });
+      }
+    } finally {
+      _isRefreshingLiveScore = false;
     }
   }
 
@@ -430,14 +483,11 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: EdgeInsets.zero,
               children: [
                 _menuTile(
-                  icon: Icons.group_outlined,
-                  title: "Guardians",
+                  icon: Icons.health_and_safety_outlined,
+                  title: "Safety Info & Numbers",
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(
-                      this.context,
-                      MaterialPageRoute(builder: (_) => const GuardiansScreen()),
-                    );
+                    _showSafetyInfoBottomSheet();
                   },
                 ),
                 _menuTile(
@@ -469,10 +519,27 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: const EdgeInsets.all(16),
             child: OutlinedButton.icon(
               onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.remove("cached_user_name");
-                await prefs.remove("cached_user_email");
-                await prefs.remove("cached_user_id");
+                Navigator.pop(context);
+
+                final shouldLogout = await showDialog<bool>(
+                  context: this.context,
+                  builder: (dialogCtx) => AlertDialog(
+                    title: const Text('Confirm Logout'),
+                    content: const Text('Are you sure you want to logout?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogCtx, false),
+                        child: const Text('Cancel'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(dialogCtx, true),
+                        child: const Text('Logout'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (shouldLogout != true) return;
 
                 await authProvider.logout();
 
@@ -494,6 +561,79 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
     );
+  }
+
+  void _showSafetyInfoBottomSheet() {
+    final numbers = <Map<String, String>>[
+      {"label": "National Emergency", "number": "112"},
+      {"label": "Police", "number": "100"},
+      {"label": "Ambulance", "number": "108"},
+      {"label": "Women Helpline", "number": "1091"},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).dividerColor.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Safety Info & Numbers',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Use these emergency numbers when immediate help is needed.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 10),
+                ...numbers.map(
+                  (item) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.local_phone_outlined),
+                    title: Text(item['label']!),
+                    trailing: Text(
+                      item['number']!,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openPoliceDialPad() async {
+    final uri = Uri.parse('tel:112');
+    final ok = await launchUrl(uri);
+    if (!ok && mounted) {
+      AppSnackBar.show(context, 'Could not open dial pad for 112', type: AppSnackBarType.error);
+    }
   }
 
   Widget _menuTile({
@@ -784,11 +924,13 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           IconButton(
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const NotificationsScreen()),
               );
+              if (!mounted) return;
+              _loadUnreadNotificationState();
             },
             icon: Container(
               padding: const EdgeInsets.all(8),
@@ -803,6 +945,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               child: Badge(
+                isLabelVisible: _hasUnreadNotifications,
+                backgroundColor: Colors.redAccent,
+                smallSize: 8,
                 child: Icon(
                   Icons.notifications_outlined,
                   color: Theme.of(context).primaryColor,
@@ -937,10 +1082,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: "Alert\nPolice",
                 icon: Icons.local_police,
                 color: AppTheme.dangerColor,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => QuickActionDetailsScreen(userId: _userId, action: "alert_police")),
-                ),
+                onTap: _openPoliceDialPad,
               ),
             ],
           ),

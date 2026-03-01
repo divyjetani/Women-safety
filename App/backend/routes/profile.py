@@ -4,9 +4,6 @@ from schemas.profile import (
     UpdateProfile,
     UpdateSettings,
     AddContact,
-    ContactResponse,
-    ProfileStats,
-    ProfileSettings,
 )
 from database.collections import get_collections
 
@@ -16,36 +13,65 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 @router.get("/{user_id}", response_model=Profile)
 async def get_profile(user_id: int):
     collections = get_collections()
-    profiles_col = collections["profiles"]
-    
-    profile = await profiles_col.find_one({"user_id": user_id}, {"_id": 0})
+    users_col = collections["users"]
 
-    if not profile:
-        profile = {
-            "user_id": user_id,
-            "name": "New User",
-            "email": "",
-            "isPremium": False,
-            "stats": {"safeDays": 0, "sosUsed": 0, "checkins": 0, "guardians": 0},
-            "settings": {"notifications": True, "locationSharing": True},
-        }
-        await profiles_col.insert_one(profile)
+    user_doc = await users_col.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="User not found")
 
-    return profile
+    settings = user_doc.get("settings") or {}
+    stats = user_doc.get("stats") or {}
+
+    return {
+        "user_id": user_id,
+        "name": user_doc.get("username", "New User"),
+        "email": user_doc.get("email", ""),
+        "phone": user_doc.get("phone", ""),
+        "face_image": user_doc.get("face_image", ""),
+        "aadhar_verified": user_doc.get("aadhar_verified", False),
+        "isPremium": user_doc.get("is_premium", False),
+        "stats": {
+            "safeDays": stats.get("safeDays", 0),
+            "sosUsed": stats.get("sosUsed", 0),
+            "checkins": stats.get("checkins", 0),
+            "guardians": stats.get("guardians", 0),
+        },
+        "settings": {
+            "notifications": settings.get("notifications", True),
+            "locationSharing": settings.get("locationSharing", True),
+        },
+    }
 
 
 @router.put("/{user_id}")
 async def update_profile(user_id: int, body: UpdateProfile):
     collections = get_collections()
-    profiles_col = collections["profiles"]
-    
-    res = await profiles_col.update_one(
-        {"user_id": user_id},
-        {"$set": {"name": body.name, "email": body.email}}
-    )
-    
-    if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="User profile not found")
+    users_col = collections["users"]
+    user_updates = {}
+
+    if body.name is not None:
+        user_updates["username"] = body.name
+
+    if body.email is not None:
+        normalized_email = body.email.strip().lower()
+        user_updates["email"] = normalized_email
+
+    if body.phone is not None:
+        user_updates["phone"] = body.phone
+
+    if body.face_image is not None:
+        user_updates["face_image"] = body.face_image
+
+    if body.aadhar_verified is not None:
+        user_updates["aadhar_verified"] = body.aadhar_verified
+
+    if user_updates:
+        result = await users_col.update_one(
+            {"id": user_id},
+            {"$set": user_updates},
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
     
     return {"success": True, "message": "Profile updated successfully"}
 
@@ -53,10 +79,10 @@ async def update_profile(user_id: int, body: UpdateProfile):
 @router.put("/{user_id}/settings")
 async def update_settings(user_id: int, body: UpdateSettings):
     collections = get_collections()
-    profiles_col = collections["profiles"]
+    users_col = collections["users"]
     
-    res = await profiles_col.update_one(
-        {"user_id": user_id},
+    res = await users_col.update_one(
+        {"id": user_id},
         {
             "$set": {
                 "settings.notifications": body.notifications,
@@ -66,7 +92,7 @@ async def update_settings(user_id: int, body: UpdateSettings):
     )
     
     if res.matched_count == 0:
-        raise HTTPException(status_code=404, detail="User profile not found")
+        raise HTTPException(status_code=404, detail="User not found")
     
     return {"success": True, "message": "Settings updated successfully"}
 

@@ -38,12 +38,9 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
     <aside className={`sidebar ${isOpen ? 'open' : 'closed'}`}>
       <div className="sidebar-header">
         <div className="logo-container">
-          <div className="logo-icon">
-            <Shield className="shield-icon" />
-          </div>
           {isOpen && (
             <div className="logo-text">
-              <h1>SafeGuard</h1>
+              <h1>She Safe</h1>
               <p>Women Safety Analytics</p>
             </div>
           )}

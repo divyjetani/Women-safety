@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/bubble_model.dart';
 import '../services/api_service.dart';
+import 'app_snackbar.dart';
 
 class BubbleInfoSheet extends StatefulWidget {
   final SafetyGroup? group;
@@ -87,9 +88,7 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
                     icon: const Icon(Icons.copy, size: 18),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: widget.group!.code!));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Code copied!')),
-                      );
+                      AppSnackBar.show(context, 'Code copied!', type: AppSnackBarType.success);
                     },
                   ),
                 ],

@@ -1,5 +1,6 @@
 // app/api_service.dart
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -7,6 +8,7 @@ import 'connectivity_service.dart';
 import '../models/models.dart';
 import 'package:mobile/conn_url.dart';
 import 'package:mobile/models/bubble_model.dart';
+import 'background_location_service.dart';
 
 class ApiService {
   static const String baseUrl = ApiUrls.baseUrl;
@@ -111,19 +113,74 @@ class ApiService {
   // ✅ AUTH
   // ==========================
 
-  static Future<LoginResponse> login(String phone) async {
+  static Future<LoginResponse> login({
+    required String email,
+    required String password,
+  }) async {
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
         Uri.parse('$baseUrl/auth/login'),
         headers: await _headers(),
-        body: jsonEncode({'phone': phone}),
+        body: jsonEncode({'email': email, 'password': password}),
       );
     });
 
     return LoginResponse.fromJson(jsonResponse);
   }
 
+  static Future<LoginResponse> register({
+    required String email,
+    required String phone,
+    required String password,
+    required String gender,
+    required String birthdate,
+    required String faceImage,
+    required bool aadharVerified,
+    required List<String> emergencyContacts,
+    String username = '',
+    bool isPremium = false,
+  }) async {
+    final jsonResponse = await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/auth/register'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'username': username,
+          'email': email,
+          'phone': phone,
+          'password': password,
+          'gender': gender,
+          'birthdate': birthdate,
+          'face_image': faceImage,
+          'aadhar_verified': aadharVerified,
+          'emergency_contacts': emergencyContacts,
+          'is_premium': isPremium,
+        }),
+      );
+    });
+
+    return LoginResponse.fromJson(jsonResponse);
+  }
+
+  static Future<AuthMessageResponse> forgotPassword(String email) async {
+    final jsonResponse = await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/auth/forgot-password'),
+        headers: await _headers(),
+        body: jsonEncode({'email': email}),
+      );
+    });
+
+    return AuthMessageResponse.fromJson(jsonResponse);
+  }
+
   static Future<void> logout() async {
+    try {
+      await BackgroundLocationService.stopBackgroundLocationSharing();
+    } catch (_) {
+      // ignore - service may already be stopped or unavailable
+    }
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
   }
@@ -142,7 +199,25 @@ class ApiService {
 
   static Future<void> saveCurrentUser(User user) async {
     final prefs = await SharedPreferences.getInstance();
+
+    // If account changed, drop profile/contact caches from previous sessions.
+    final previousUserId = prefs.getInt('cached_user_id');
+    if (previousUserId != null && previousUserId != user.id) {
+      final keys = prefs.getKeys();
+      for (final key in keys) {
+        if (key.startsWith('cached_profile_') || key.startsWith('cached_contacts_')) {
+          await prefs.remove(key);
+        }
+      }
+    }
+
     await prefs.setString('user', jsonEncode(user.toJson()));
+    await prefs.setInt('cached_user_id', user.id);
+    await prefs.setString(
+      'cached_user_name',
+      user.username.trim().isNotEmpty ? user.username.trim() : user.email,
+    );
+    await prefs.setString('cached_user_email', user.email);
 
     // ✅ example token storage (replace with real backend token)
     await prefs.setString(
@@ -305,14 +380,24 @@ class ApiService {
 
   static Future<Map<String, dynamic>> updateProfile({
     required int userId,
-    required String name,
-    required String email,
+    String? name,
+    String? email,
+    String? phone,
+    String? faceImage,
+    bool? aadharVerified,
   }) async {
+    final body = <String, dynamic>{};
+    if (name != null) body["name"] = name;
+    if (email != null) body["email"] = email;
+    if (phone != null) body["phone"] = phone;
+    if (faceImage != null) body["face_image"] = faceImage;
+    if (aadharVerified != null) body["aadhar_verified"] = aadharVerified;
+
     return await _makeRequest(() async {
       return await http.put(
         Uri.parse('$baseUrl/profile/$userId'),
         headers: await _headers(withAuth: true),
-        body: jsonEncode({"name": name, "email": email}),
+        body: jsonEncode(body),
       );
     });
   }
@@ -568,6 +653,24 @@ class ApiService {
     final isConnected = await ConnectivityService.isConnected();
     if (!isConnected) throw Exception("No internet connection");
 
+    Future<void> ensureFile(String path, String label) async {
+      if (path.trim().isEmpty) {
+        throw Exception('$label path is empty');
+      }
+      if (!await File(path).exists()) {
+        throw Exception('$label file not found: $path');
+      }
+    }
+
+    await ensureFile(frontVideoPath, 'Front video');
+    await ensureFile(backVideoPath, 'Back video');
+    if (startImagePath.trim().isNotEmpty) {
+      await ensureFile(startImagePath, 'Start image');
+    }
+    if (endImagePath.trim().isNotEmpty) {
+      await ensureFile(endImagePath, 'End image');
+    }
+
     final uri = Uri.parse('$baseUrl/recordings/upload-anonymous');
     final request = http.MultipartRequest("POST", uri);
 
@@ -583,8 +686,12 @@ class ApiService {
 
     request.files.add(await http.MultipartFile.fromPath("front_video", frontVideoPath));
     request.files.add(await http.MultipartFile.fromPath("back_video", backVideoPath));
-    request.files.add(await http.MultipartFile.fromPath("start_image", startImagePath));
-    request.files.add(await http.MultipartFile.fromPath("end_image", endImagePath));
+    if (startImagePath.trim().isNotEmpty) {
+      request.files.add(await http.MultipartFile.fromPath("start_image", startImagePath));
+    }
+    if (endImagePath.trim().isNotEmpty) {
+      request.files.add(await http.MultipartFile.fromPath("end_image", endImagePath));
+    }
 
     final streamed = await request.send().timeout(const Duration(seconds: 15));
     final response = await http.Response.fromStream(streamed);
@@ -610,6 +717,23 @@ class ApiService {
     final isConnected = await ConnectivityService.isConnected();
     if (!isConnected) throw Exception("No internet connection");
 
+    Future<void> ensureFile(String path, String label) async {
+      if (path.trim().isEmpty) {
+        throw Exception('$label path is empty');
+      }
+      if (!await File(path).exists()) {
+        throw Exception('$label file not found: $path');
+      }
+    }
+
+    await ensureFile(backVideoPath, 'Back video');
+    if (startImagePath.trim().isNotEmpty) {
+      await ensureFile(startImagePath, 'Start image');
+    }
+    if (endImagePath.trim().isNotEmpty) {
+      await ensureFile(endImagePath, 'End image');
+    }
+
     final uri = Uri.parse('$baseUrl/recordings/upload-fakecall');
 
     final request = http.MultipartRequest("POST", uri);
@@ -625,8 +749,12 @@ class ApiService {
     request.fields["end_lng"] = endLng;
 
     request.files.add(await http.MultipartFile.fromPath("back_video", backVideoPath));
-    request.files.add(await http.MultipartFile.fromPath("start_image", startImagePath));
-    request.files.add(await http.MultipartFile.fromPath("end_image", endImagePath));
+    if (startImagePath.trim().isNotEmpty) {
+      request.files.add(await http.MultipartFile.fromPath("start_image", startImagePath));
+    }
+    if (endImagePath.trim().isNotEmpty) {
+      request.files.add(await http.MultipartFile.fromPath("end_image", endImagePath));
+    }
 
     final streamed = await request.send().timeout(const Duration(seconds: 15));
     final response = await http.Response.fromStream(streamed);

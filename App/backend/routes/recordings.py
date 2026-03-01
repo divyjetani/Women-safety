@@ -19,8 +19,8 @@ async def upload_anonymous_recording(
     end_lng: str = Form(""),
     front_video: UploadFile = File(...),
     back_video: UploadFile = File(...),
-    start_image: UploadFile = File(...),
-    end_image: UploadFile = File(...),
+    start_image: UploadFile | None = File(default=None),
+    end_image: UploadFile | None = File(default=None),
 ):
     try:
         recording = await AnonymousRecordingService.upload_anonymous_recording(
@@ -58,8 +58,8 @@ async def upload_fakecall_recording(
     end_lat: str = Form(""),
     end_lng: str = Form(""),
     back_video: UploadFile = File(...),
-    start_image: UploadFile = File(...),
-    end_image: UploadFile = File(...),
+    start_image: UploadFile | None = File(default=None),
+    end_image: UploadFile | None = File(default=None),
 ):
     try:
         recording = await FakecallRecordingService.upload_fakecall_recording(

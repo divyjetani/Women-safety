@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/models/bubble_model.dart';
 import 'package:mobile/services/bubble_api.dart';
+import 'package:mobile/app/auth_provider.dart';
+import 'package:mobile/widgets/app_snackbar.dart';
 
 class CreateBubbleScreen extends StatefulWidget {
   const CreateBubbleScreen({Key? key}) : super(key: key);
@@ -56,21 +58,31 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
     });
 
     try {
-      // TODO: Get actual user ID and name from auth service
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+
+      if (user == null) {
+        setState(() => _errorMessage = 'Please login again to create a bubble');
+        return;
+      }
+
+      final userName = (user.username?.trim().isNotEmpty ?? false)
+          ? user.username!.trim()
+          : user.email;
+
       final bubble = await BubbleAPI.createBubble(
         name: _bubbleNameController.text.trim(),
         icon: _selectedIcon,
         color: _selectedColor,
-        adminId: 1, // Replace with actual user ID
-        adminName: 'User', // Replace with actual user name
+        adminId: user.id,
+        adminName: userName,
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🎉 Bubble created! Code: ${bubble.code}'),
-            backgroundColor: Colors.green,
-          ),
+        AppSnackBar.show(
+          context,
+          '🎉 Bubble created! Code: ${bubble.code}',
+          type: AppSnackBarType.success,
         );
 
         // Navigate to bubble members screen

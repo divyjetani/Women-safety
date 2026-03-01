@@ -1,9 +1,0 @@
-3 km radius ma safe zones batave
-show alerts list with location and threat type
-safety score card ma current location
-remove checkins
-government info or women help 
-remove quick actions
-remove location sharing in profile
-chose theme option
-analytics only open in premium

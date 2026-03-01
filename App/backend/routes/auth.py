@@ -1,41 +1,127 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
-from schemas.user import LoginRequest, User
+from passlib.context import CryptContext
+from passlib.exc import UnknownHashError
+
+try:
+    import bcrypt as bcrypt_lib
+except Exception:
+    bcrypt_lib = None
+
+from schemas.user import LoginRequest, RegisterRequest, ForgotPasswordRequest
 from database.collections import get_collections
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
+
+
+def _sanitize_user(user_doc: dict) -> dict:
+    sanitized = {k: v for k, v in user_doc.items() if k not in {"_id", "password_hash"}}
+    return sanitized
+
+
+def _verify_password_with_fallback(plain_password: str, stored_hash: str) -> tuple[bool, bool]:
+    try:
+        return pwd_context.verify(plain_password, stored_hash), False
+    except UnknownHashError:
+        pass
+
+    if stored_hash.startswith(("$2a$", "$2b$", "$2y$")) and bcrypt_lib is not None:
+        try:
+            ok = bcrypt_lib.checkpw(plain_password.encode("utf-8"), stored_hash.encode("utf-8"))
+            return ok, ok
+        except Exception:
+            return False, False
+
+    if stored_hash == plain_password:
+        return True, True
+
+    return False, False
 
 @router.post("/login")
 async def login(request: LoginRequest):
     collections = get_collections()
     users_col = collections["users"]
-    
-    user = await users_col.find_one({"phone": request.phone}, {"_id": 0})
+
+    normalized_email = request.email.strip().lower()
+    user = await users_col.find_one({"email": normalized_email})
 
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="User not found for this email")
+
+    password_hash = user.get("password_hash", "")
+    if not password_hash:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    is_valid, needs_migration = _verify_password_with_fallback(request.password, password_hash)
+    if not is_valid:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    if needs_migration:
+        migrated_hash = pwd_context.hash(request.password)
+        await users_col.update_one(
+            {"id": user.get("id")},
+            {"$set": {"password_hash": migrated_hash}},
+        )
+        user["password_hash"] = migrated_hash
 
     return {
         "success": True,
-        "user": user,
-        "token": f"token_{request.phone}_{int(datetime.now().timestamp())}"
+        "user": _sanitize_user(user),
+        "token": f"token_{user.get('id', 0)}_{int(datetime.now().timestamp())}"
     }
 
 
 @router.post("/register")
-async def register(user: User):
+async def register(user: RegisterRequest):
     collections = get_collections()
     users_col = collections["users"]
-    
-    exists = await users_col.find_one({"phone": user.phone})
-    if exists:
-        raise HTTPException(status_code=409, detail="User already exists")
 
-    doc = user.dict()
+    normalized_email = user.email.strip().lower()
+    exists = await users_col.find_one({"$or": [{"phone": user.phone}, {"email": normalized_email}]})
+    if exists:
+        raise HTTPException(status_code=409, detail="User already exists with this phone/email")
+
+    last_user = await users_col.find_one(sort=[("id", -1)])
+    next_id = (last_user.get("id", 0) if last_user else 0) + 1
+
+    username = user.username.strip() if user.username else normalized_email.split("@")[0]
+
+    doc = {
+        "id": next_id,
+        "username": username,
+        "email": normalized_email,
+        "phone": user.phone,
+        "password_hash": pwd_context.hash(user.password),
+        "gender": user.gender,
+        "birthdate": user.birthdate.isoformat(),
+        "face_image": user.face_image,
+        "aadhar_verified": user.aadhar_verified,
+        "emergency_contacts": user.emergency_contacts,
+        "is_premium": user.is_premium,
+    }
+
     await users_col.insert_one(doc)
-    
+
     return {
         "success": True,
-        "user": doc,
-        "token": f"token_{user.phone}_{int(datetime.now().timestamp())}"
+        "user": _sanitize_user(doc),
+        "token": f"token_{next_id}_{int(datetime.now().timestamp())}"
+    }
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    collections = get_collections()
+    users_col = collections["users"]
+
+    normalized_email = request.email.strip().lower()
+    user = await users_col.find_one({"email": normalized_email})
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found for this email")
+
+    return {
+        "success": True,
+        "message": f"Password reset link sent to {normalized_email} (demo)",
     }

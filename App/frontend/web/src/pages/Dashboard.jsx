@@ -88,9 +88,10 @@ const Dashboard = () => {
           <p className="page-subtitle">Your safety dashboard is active and monitoring</p>
         </div>
         <div className="header-actions">
+          
+            <span className="notification-badge">3</span>
           <button className="btn btn-secondary">
             <Bell size={18} />
-            <span className="notification-badge">3</span>
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
+import 'app_snackbar.dart';
 
 class EmergencyButton extends StatefulWidget {
   const EmergencyButton({super.key});
@@ -29,12 +30,11 @@ class _EmergencyButtonState extends State<EmergencyButton>
 
   void _startEmergency() {
     // Implement emergency action
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Emergency alert sent to contacts and police!'),
-        backgroundColor: AppTheme.dangerColor,
-        behavior: SnackBarBehavior.floating,
-      ),
+    AppSnackBar.show(
+      context,
+      'Emergency alert sent to contacts and police!',
+      type: AppSnackBarType.error,
+      duration: const Duration(seconds: 4),
     );
   }
 

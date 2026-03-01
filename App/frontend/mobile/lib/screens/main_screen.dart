@@ -19,6 +19,20 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   bool _isEmergencyActive = false;
+  bool _slideFromRight = true;
+  int? _lastUserId;
+  List<Widget> _screens = const [];
+
+  void _ensureScreens(int userId) {
+    if (_lastUserId == userId && _screens.isNotEmpty) return;
+    _lastUserId = userId;
+    _screens = [
+      const HomeScreen(),
+      const MapScreen(),
+      const AnalyticsScreenV2(),
+      ProfileScreen(userId: userId),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,13 +44,7 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     final int currUserId = authProvider.currentUser!.id;
-
-    final List<Widget> _screens = [
-      const HomeScreen(),
-      const MapScreen(),
-      const AnalyticsScreenV2(),
-      ProfileScreen(userId: currUserId),
-    ];
+    _ensureScreens(currUserId);
 
     bool _incognito = false;
 
@@ -45,29 +53,31 @@ class _MainScreenState extends State<MainScreen> {
         onNotification: (notification) {
           if (_selectedIndex != notification.index) {
             setState(() {
+              _slideFromRight = notification.index > _selectedIndex;
               _selectedIndex = notification.index;
             });
           }
           return true;
         },
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) {
-            final slide = Tween<Offset>(
-              begin: const Offset(0.06, 0),
-              end: Offset.zero,
-            ).animate(animation);
-
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(position: slide, child: child),
+        child: TweenAnimationBuilder<double>(
+          key: ValueKey<String>('tab_${_selectedIndex}_${_slideFromRight ? "r" : "l"}'),
+          duration: const Duration(milliseconds: 480),
+          curve: Curves.easeInOutCubic,
+          tween: Tween<double>(begin: 0.0, end: 1.0),
+          builder: (context, value, child) {
+            final direction = _slideFromRight ? 1.0 : -1.0;
+            final dx = (1 - value) * 26.0 * direction;
+            return Opacity(
+              opacity: 0.7 + (value * 0.3),
+              child: Transform.translate(
+                offset: Offset(dx, 0),
+                child: child,
+              ),
             );
           },
-          child: KeyedSubtree(
-            key: ValueKey<int>(_selectedIndex),
-            child: _screens[_selectedIndex],
+          child: IndexedStack(
+            index: _selectedIndex,
+            children: _screens,
           ),
         ),
       ),
@@ -77,6 +87,7 @@ class _MainScreenState extends State<MainScreen> {
           currentIndex: _selectedIndex,
           onTap: (index) {
             setState(() {
+              _slideFromRight = index > _selectedIndex;
               _selectedIndex = index;
             });
           },

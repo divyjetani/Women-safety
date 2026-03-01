@@ -21,6 +21,7 @@ import '../services/location_storage.dart';
 import '../widgets/map_group_strip_left.dart';
 import '../widgets/map_incognito_strip_right.dart';
 import '../widgets/group_bubble_bar.dart';
+import '../widgets/app_snackbar.dart';
 
 
 class MapScreen extends StatefulWidget {
@@ -93,8 +94,8 @@ class _MapScreenState extends State<MapScreen> {
 
   // for periodic location updates via WebSocket
   Timer? _locationTimer;
-  String? _lastSnackMessage;
-  DateTime? _lastSnackAt;
+  bool _locationServiceWarningShown = false;
+  bool _locationPermissionWarningShown = false;
 
   // default fallback if no last location
   final LatLng _defaultCenter = const LatLng(23.0293515, 72.5530625); // Delhi
@@ -315,6 +316,28 @@ class _MapScreenState extends State<MapScreen> {
       // Start periodic location updates via WebSocket
       _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
         try {
+          final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+          if (!serviceEnabled) {
+            if (!_locationServiceWarningShown && mounted) {
+              _locationServiceWarningShown = true;
+              _showSnack("Location service is off. Enable it to update live location.");
+            }
+            return;
+          }
+
+          var permission = await Geolocator.checkPermission();
+          if (permission == LocationPermission.denied ||
+              permission == LocationPermission.deniedForever) {
+            if (!_locationPermissionWarningShown && mounted) {
+              _locationPermissionWarningShown = true;
+              _showSnack("Location permission denied. Please enable from app settings.");
+            }
+            return;
+          }
+
+          _locationServiceWarningShown = false;
+          _locationPermissionWarningShown = false;
+
           final pos = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
           );
@@ -603,86 +626,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _showSnack(String msg) {
     if (!mounted) return;
-    final now = DateTime.now();
-    if (_lastSnackMessage == msg &&
-        _lastSnackAt != null &&
-        now.difference(_lastSnackAt!) < const Duration(milliseconds: 900)) {
-      return;
-    }
-
-    _lastSnackMessage = msg;
-    _lastSnackAt = now;
-
-    final theme = Theme.of(context);
-    final messenger = ScaffoldMessenger.of(context);
-
-    messenger.removeCurrentSnackBar(reason: SnackBarClosedReason.remove);
-    messenger.clearSnackBars();
-
-    messenger.showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        padding: EdgeInsets.zero,
-        duration: const Duration(seconds: 3),
-        dismissDirection: DismissDirection.horizontal,
-        content: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: theme.dividerColor.withOpacity(0.2),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Icon(
-                Icons.info_outline,
-                color: theme.colorScheme.primary,
-                size: 20,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  msg,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 6),
-              InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () {
-                  messenger.hideCurrentSnackBar();
-                },
-                child: Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: Icon(
-                    Icons.close,
-                    size: 18,
-                    color: theme.colorScheme.onSurface.withOpacity(0.75),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    AppSnackBar.show(context, msg);
   }
 
   void _showCodeDialog(String code) {

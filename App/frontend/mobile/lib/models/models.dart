@@ -5,6 +5,10 @@ class User {
   final String email;
   final String phone;
   final List<String> emergencyContacts;
+  final String gender;
+  final String birthdate;
+  final String faceImage;
+  final bool aadharVerified;
   final bool isPremium;
 
   User({
@@ -13,6 +17,10 @@ class User {
     required this.email,
     required this.phone,
     required this.emergencyContacts,
+    required this.gender,
+    required this.birthdate,
+    required this.faceImage,
+    required this.aadharVerified,
     required this.isPremium,
   });
 
@@ -23,6 +31,10 @@ class User {
       email: json['email'] ?? '',
       phone: json['phone'] ?? '',
       emergencyContacts: List<String>.from(json['emergency_contacts'] ?? []),
+      gender: json['gender'] ?? '',
+      birthdate: json['birthdate'] ?? '',
+      faceImage: json['face_image'] ?? '',
+      aadharVerified: json['aadhar_verified'] ?? false,
       isPremium: json['is_premium'] ?? false,
     );
   }
@@ -34,6 +46,10 @@ class User {
       'email': email,
       'phone': phone,
       'emergency_contacts': emergencyContacts,
+      'gender': gender,
+      'birthdate': birthdate,
+      'face_image': faceImage,
+      'aadhar_verified': aadharVerified,
       'is_premium': isPremium,
     };
   }
@@ -183,6 +199,23 @@ class LoginResponse {
       success: json['success'] ?? false,
       user: json['user'] != null ? User.fromJson(json['user']) : null,
       token: json['token'] ?? '',
+    );
+  }
+}
+
+class AuthMessageResponse {
+  final bool success;
+  final String message;
+
+  AuthMessageResponse({
+    required this.success,
+    required this.message,
+  });
+
+  factory AuthMessageResponse.fromJson(Map<String, dynamic> json) {
+    return AuthMessageResponse(
+      success: json['success'] ?? false,
+      message: json['message'] ?? '',
     );
   }
 }

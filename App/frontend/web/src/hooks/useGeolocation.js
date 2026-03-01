@@ -40,3 +40,4 @@ export const useGeolocation = (options = {}) => {
 
   return location;
 };
+

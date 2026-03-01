@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'app_snackbar.dart';
 
 class JoinBubbleDialog extends StatefulWidget {
   final Function(String code) onJoin;
@@ -23,16 +24,12 @@ class _JoinBubbleDialogState extends State<JoinBubbleDialog> {
     final code = _codeController.text.trim();
     
     if (code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a code')),
-      );
+      AppSnackBar.show(context, 'Please enter a code', type: AppSnackBarType.warning);
       return;
     }
 
     if (code.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Code must be 6 characters')),
-      );
+      AppSnackBar.show(context, 'Code must be 6 characters', type: AppSnackBarType.warning);
       return;
     }
 
@@ -45,9 +42,7 @@ class _JoinBubbleDialogState extends State<JoinBubbleDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        AppSnackBar.show(context, 'Error: $e', type: AppSnackBarType.error);
       }
     } finally {
       if (mounted) {

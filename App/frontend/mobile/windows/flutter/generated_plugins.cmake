@@ -7,6 +7,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
   battery_plus
   connectivity_plus
+  file_selector_windows
   firebase_core
   geolocator_windows
   objectbox_flutter_libs

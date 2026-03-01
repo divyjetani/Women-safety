@@ -7,8 +7,11 @@ class AddContact(BaseModel):
     isPrimary: bool = False
 
 class UpdateProfile(BaseModel):
-    name: str
-    email: str
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    face_image: Optional[str] = None
+    aadhar_verified: Optional[bool] = None
 
 class UpdateSettings(BaseModel):
     notifications: bool
@@ -35,6 +38,9 @@ class Profile(BaseModel):
     user_id: int
     name: str
     email: str
+    phone: str = ""
+    face_image: str = ""
+    aadhar_verified: bool = False
     isPremium: bool
     stats: ProfileStats
     settings: ProfileSettings

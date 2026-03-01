@@ -5,8 +5,11 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:mobile/models/bubble_model.dart';
+import 'package:provider/provider.dart';
 import 'package:mobile/services/bubble_api.dart';
 import 'package:mobile/services/bubble_websocket_service.dart';
+import 'package:mobile/app/auth_provider.dart';
+import 'package:mobile/widgets/app_snackbar.dart';
 
 class BubbleMembersScreen extends StatefulWidget {
   final Bubble initialBubble;
@@ -58,10 +61,16 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
         return;
       }
 
+      final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+      if (user == null) {
+        setState(() => _errorMessage = 'Please login again to load bubble members');
+        return;
+      }
+
       // Connect to WebSocket
       _wsService = BubbleWebSocketService(
         bubbleCode: _bubble!.code,
-        userId: 1, // TODO: Get actual user ID
+        userId: user.id,
       );
 
       _wsService.onLocationUpdate = (members) {
@@ -79,20 +88,17 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
 
       _wsService.onError = (error) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $error'), backgroundColor: Colors.red),
-          );
+          AppSnackBar.show(context, 'Error: $error', type: AppSnackBarType.error);
         }
       };
 
       _wsService.onConnectionChanged = (connected) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(connected ? '🟢 Connected' : '🔴 Disconnected'),
-              backgroundColor: connected ? Colors.green : Colors.red,
-              duration: const Duration(seconds: 2),
-            ),
+          AppSnackBar.show(
+            context,
+            connected ? '🟢 Connected' : '🔴 Disconnected',
+            type: connected ? AppSnackBarType.success : AppSnackBarType.error,
+            duration: const Duration(seconds: 2),
           );
         }
       };
@@ -207,19 +213,9 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
 
     if (_isSharing) {
       await _updateLocation();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('📍 Location sharing enabled'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      AppSnackBar.show(context, '📍 Location sharing enabled', type: AppSnackBarType.success);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('🔇 Location sharing paused'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      AppSnackBar.show(context, '🔇 Location sharing paused', type: AppSnackBarType.warning);
     }
   }
 

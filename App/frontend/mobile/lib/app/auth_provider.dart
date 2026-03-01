@@ -21,13 +21,16 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> login(String phone) async {
+  Future<bool> login({
+    required String email,
+    required String password,
+  }) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await ApiService.login(phone);
+      final response = await ApiService.login(email: email, password: password);
 
       if (response.success && response.user != null) {
         _currentUser = response.user;
@@ -36,7 +39,7 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
         return true;
       } else {
-        _error = 'Login failed. Please check your phone number.';
+        _error = 'Login failed. Please check your email and password.';
         _isLoading = false;
         notifyListeners();
         return false;
@@ -49,9 +52,86 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  Future<bool> register({
+    required String email,
+    required String phone,
+    required String password,
+    required String gender,
+    required String birthdate,
+    required String faceImage,
+    required bool aadharVerified,
+    required List<String> emergencyContacts,
+    String username = '',
+  }) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.register(
+        username: username,
+        email: email,
+        phone: phone,
+        password: password,
+        gender: gender,
+        birthdate: birthdate,
+        faceImage: faceImage,
+        aadharVerified: aadharVerified,
+        emergencyContacts: emergencyContacts,
+      );
+
+      if (response.success && response.user != null) {
+        _currentUser = response.user;
+        await ApiService.saveCurrentUser(response.user!);
+        _isLoading = false;
+        notifyListeners();
+        return true;
+      }
+
+      _error = 'Registration failed. Please try again.';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<String?> forgotPassword(String email) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final response = await ApiService.forgotPassword(email);
+      _isLoading = false;
+      notifyListeners();
+      return response.message;
+    } catch (e) {
+      _error = e.toString();
+      _isLoading = false;
+      notifyListeners();
+      return null;
+    }
+  }
+
   Future<void> logout() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     await ApiService.logout();
     _currentUser = null;
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> setCurrentUser(User user) async {
+    _currentUser = user;
+    await ApiService.saveCurrentUser(user);
     notifyListeners();
   }
 

@@ -3,8 +3,10 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../app/auth_provider.dart';
+import '../widgets/app_snackbar.dart';
 import '../widgets/error_dialog.dart';
 import 'main_screen.dart';
+import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,12 +16,14 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   @override
   void dispose() {
-    _phoneController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -30,9 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not launch emergency call')),
-      );
+      AppSnackBar.show(context, 'Could not launch emergency call', type: AppSnackBarType.error);
     }
   }
 
@@ -40,7 +42,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authProvider = context.read<AuthProvider>();
-    final success = await authProvider.login(_phoneController.text);
+    final success = await authProvider.login(
+      email: _emailController.text.trim(),
+      password: _passwordController.text,
+    );
 
     if (!mounted) return;
 
@@ -53,11 +58,35 @@ class _LoginScreenState extends State<LoginScreen> {
       ErrorDialog.show(
         context: context,
         title: 'Login Failed',
-        message: authProvider.error ?? 'Invalid phone number or network error',
+        message: authProvider.error ?? 'Invalid email/password or network error',
         onRetry: _login,
         buttonText: 'Try Again',
       );
     }
+  }
+
+  Future<void> _forgotPassword() async {
+    if (_emailController.text.trim().isEmpty) {
+      AppSnackBar.show(context, 'Enter your email first.', type: AppSnackBarType.warning);
+      return;
+    }
+
+    final authProvider = context.read<AuthProvider>();
+    final message = await authProvider.forgotPassword(_emailController.text.trim());
+
+    if (!mounted) return;
+    if (message != null) {
+      AppSnackBar.show(context, message, type: AppSnackBarType.success);
+      return;
+    }
+
+    ErrorDialog.show(
+      context: context,
+      title: 'Forgot Password Failed',
+      message: authProvider.error ?? 'Please try again.',
+      onRetry: _forgotPassword,
+      buttonText: 'Retry',
+    );
   }
 
   @override
@@ -89,13 +118,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           gradient: LinearGradient(
                             colors: [
                               colors.primary,
-                              colors.primary.withOpacity(0.7),
+                              colors.primary.withValues(alpha: 0.7),
                             ],
                           ),
                           shape: BoxShape.circle,
                           boxShadow: [
                             BoxShadow(
-                              color: colors.primary.withOpacity(0.3),
+                              color: colors.primary.withValues(alpha: 0.3),
                               blurRadius: 20,
                             ),
                           ],
@@ -124,41 +153,82 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text('Login', style: text.titleLarge),
                 const SizedBox(height: 8),
                 Text(
-                  'Enter your phone number to continue',
+                  'Enter your email and password to continue',
                   style: text.bodyMedium,
                 ),
 
                 const SizedBox(height: 24),
 
-                /// PHONE INPUT
+                /// EMAIL + PASSWORD INPUT
                 Form(
                   key: _formKey,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: colors.surface,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: TextFormField(
-                      controller: _phoneController,
-                      keyboardType: TextInputType.phone,
-                      style: text.bodyLarge,
-                      decoration: InputDecoration(
-                        hintText: '+1 (555) 123-4567',
-                        hintStyle: text.bodyMedium,
-                        border: InputBorder.none,
-                        prefixIcon: Icon(Icons.phone, color: colors.primary),
-                        contentPadding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          color: colors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          style: text.bodyLarge,
+                          decoration: InputDecoration(
+                            hintText: 'you@example.com',
+                            hintStyle: text.bodyMedium,
+                            border: InputBorder.none,
+                            prefixIcon: Icon(Icons.email_outlined, color: colors.primary),
+                            contentPadding: const EdgeInsets.all(20),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Please enter your email';
+                            }
+                            if (!value.contains('@')) {
+                              return 'Please enter a valid email';
+                            }
+                            return null;
+                          },
+                        ),
                       ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter your phone number';
-                        }
-                        if (value.length < 10) {
-                          return 'Please enter a valid phone number';
-                        }
-                        return null;
-                      },
-                    ),
+                      const SizedBox(height: 12),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: colors.surface,
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: TextFormField(
+                          controller: _passwordController,
+                          obscureText: true,
+                          style: text.bodyLarge,
+                          decoration: InputDecoration(
+                            hintText: 'Password',
+                            hintStyle: text.bodyMedium,
+                            border: InputBorder.none,
+                            prefixIcon: Icon(Icons.lock_outline, color: colors.primary),
+                            contentPadding: const EdgeInsets.all(20),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Please enter your password';
+                            }
+                            if (value.length < 6) {
+                              return 'Password must be at least 6 characters';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: authProvider.isLoading ? null : _forgotPassword,
+                    child: const Text('Forgot Password?'),
                   ),
                 ),
 
@@ -219,7 +289,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 24),
 
-                /// DEMO INFO
+                /// NEW USER CTA
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -230,33 +300,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.info, color: colors.primary, size: 20),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Demo Phone Numbers',
-                            style: text.titleMedium,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       Text(
-                        'Use these numbers for testing:',
-                        style: text.bodyMedium,
-                      ),
-                      const SizedBox(height: 12),
-
-                      _DemoNumberTile(
-                        number: '+1234567890',
-                        label: 'Sarah - Premium',
-                        controller: _phoneController,
+                        'New here?',
+                        style: text.titleMedium,
                       ),
                       const SizedBox(height: 8),
-                      _DemoNumberTile(
-                        number: '+1234567893',
-                        label: 'John - Free',
-                        controller: _phoneController,
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const RegisterScreen()),
+                            );
+                          },
+                          child: const Text('Create Register Account'),
+                        ),
                       ),
                     ],
                   ),
@@ -270,37 +329,3 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-/// DEMO NUMBER TILE
-class _DemoNumberTile extends StatelessWidget {
-  final String number;
-  final String label;
-  final TextEditingController controller;
-
-  const _DemoNumberTile({
-    required this.number,
-    required this.label,
-    required this.controller,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final text = Theme.of(context).textTheme;
-
-    return GestureDetector(
-      onTap: () => controller.text = number,
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: colors.outline),
-        ),
-        child: Text(
-          '$number ($label)',
-          style: text.bodyMedium,
-        ),
-      ),
-    );
-  }
-}

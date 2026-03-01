@@ -6,7 +6,6 @@ def get_collections():
     
     collections = {
         "users": db["users"],
-        "profiles": db["profiles"],
         "contacts": db["contacts"],
         "notifications": db["notifications"],
         "guardians": db["guardians"],

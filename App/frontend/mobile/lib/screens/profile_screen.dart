@@ -7,7 +7,9 @@ import 'dart:convert';
 
 import '../app/theme_provider.dart';
 import '../app/theme.dart';
+import '../app/auth_provider.dart';
 import 'package:mobile/services/api_service.dart';
+import '../widgets/app_snackbar.dart';
 
 // ✅ these are screens you can create (simple placeholders also fine)
 import 'premium_screen.dart';
@@ -29,6 +31,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   // backend values
   String name = "";
   String email = "";
+  String phone = "";
+  String faceImage = "";
+  bool aadharVerified = false;
   bool isPremium = false;
 
   int safeDays = 0;
@@ -38,25 +43,83 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   bool notificationEnabled = true;
   bool locationSharing = true;
+  bool hasUnreadNotifications = false;
 
   List<Map<String, dynamic>> contacts = [];
 
   late final AnimationController _anim;
   late final Animation<double> _fade;
 
-  @override
+  String _resolveDisplayName(AuthProvider authProvider, [String profileName = ""]) {
+    final authName = (authProvider.currentUser?.username ?? "").trim();
+    if (authName.isNotEmpty) return authName;
+
+    final normalized = profileName.trim();
+    if (normalized.isNotEmpty && normalized.toLowerCase() != "new user") {
+      return normalized;
+    }
+    return "Account";
+  }
+
+  String _resolveDisplayEmail(AuthProvider authProvider, [String profileEmail = ""]) {
+    final authEmail = (authProvider.currentUser?.email ?? "").trim();
+    if (authEmail.isNotEmpty) return authEmail;
+
+    final normalized = profileEmail.trim();
+    if (normalized.isNotEmpty) return normalized;
+
+    return "email@email.com";
+  }
+
   @override
   void initState() {
     super.initState();
 
-    _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+      value: 1.0,
+    );
     _fade = CurvedAnimation(parent: _anim, curve: Curves.easeOut);
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    if (authProvider.currentUser != null) {
+      final authUser = authProvider.currentUser!;
+      name = _resolveDisplayName(authProvider);
+      email = _resolveDisplayEmail(authProvider);
+      phone = authUser.phone;
+      faceImage = authUser.faceImage;
+      aadharVerified = authUser.aadharVerified;
+      hasLocalData = true;
+      loading = false;
+    }
 
     // ✅ show cached profile first
     _loadProfileFromCache().then((_) {
       // ✅ fetch latest after showing cached
       _loadProfile(showLoader: !hasLocalData);
     });
+
+    _loadUnreadNotificationState();
+  }
+
+  Future<void> _loadUnreadNotificationState() async {
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+      if (user == null) return;
+
+      final notifications = await ApiService.getNotifications(user.id);
+      final hasUnread = notifications.any((item) {
+        if (item is! Map<String, dynamic>) return false;
+        return item["read"] == false;
+      });
+
+      if (!mounted) return;
+      setState(() => hasUnreadNotifications = hasUnread);
+    } catch (_) {
+      // keep previous state silently
+    }
   }
 
 
@@ -98,9 +161,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 title: Text(l["label"]!),
                 onTap: () {
                   Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text("${l["label"]} selected")),
-                  );
+                  AppSnackBar.show(context, "${l["label"]} selected", type: AppSnackBarType.info);
                 },
               )),
             ],
@@ -120,17 +181,35 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         });
       }
 
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
       final profileJson = await ApiService.getProfile(widget.userId);
       final contactsJson = await ApiService.getEmergencyContacts(widget.userId);
 
+      final mergedName = _resolveDisplayName(
+        authProvider,
+        (profileJson["name"] ?? "").toString(),
+      );
+      final mergedEmail = _resolveDisplayEmail(
+        authProvider,
+        (profileJson["email"] ?? "").toString(),
+      );
+
+      final mergedProfile = Map<String, dynamic>.from(profileJson)
+        ..["name"] = mergedName
+        ..["email"] = mergedEmail;
+
       // ✅ save to cache
-      await _saveProfileToCache(profileJson, contactsJson);
+      await _saveProfileToCache(mergedProfile, contactsJson);
 
       if (!mounted) return;
 
       setState(() {
-        name = profileJson["name"] ?? "User";
-        email = profileJson["email"] ?? "email@email.com";
+        name = mergedName;
+        email = mergedEmail;
+        phone = (profileJson["phone"] ?? "").toString();
+        faceImage = (profileJson["face_image"] ?? "").toString();
+        aadharVerified = profileJson["aadhar_verified"] ?? false;
         isPremium = profileJson["isPremium"] ?? false;
 
         final stats = profileJson["stats"] ?? {};
@@ -149,7 +228,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         loading = false;
       });
 
-      _anim.forward(from: 0);
+      if (_anim.status != AnimationStatus.completed) {
+        _anim.forward();
+      }
     } catch (e) {
       setState(() {
         loading = false;
@@ -161,6 +242,22 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       // ✅ If we already have cached data, don't annoy user with popup.
       // Only show popup if no cached data exists.
       if (!hasLocalData) {
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
+        final authUser = authProvider.currentUser;
+
+        if (authUser != null) {
+          setState(() {
+            name = _resolveDisplayName(authProvider);
+            email = _resolveDisplayEmail(authProvider);
+            phone = authUser.phone;
+            faceImage = authUser.faceImage;
+            aadharVerified = authUser.aadharVerified;
+            hasLocalData = true;
+            loading = false;
+          });
+          return;
+        }
+
         _showApiErrorPopup(e);
       }
     }
@@ -189,8 +286,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         locationSharing = !location;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
+      AppSnackBar.show(
+        context,
+        e.toString().replaceAll("Exception:", "").trim(),
+        type: AppSnackBarType.error,
       );
     }
   }
@@ -260,9 +359,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   onPressed: () async {
                     if (nameCtrl.text.trim().isEmpty || phoneCtrl.text.trim().isEmpty) {
                       Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Please enter name and phone")),
-                      );
+                      AppSnackBar.show(context, "Please enter name and phone", type: AppSnackBarType.warning);
                       return;
                     }
 
@@ -278,8 +375,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       _loadProfile();
                     } catch (e) {
                       Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
+                      AppSnackBar.show(
+                        context,
+                        e.toString().replaceAll("Exception:", "").trim(),
+                        type: AppSnackBarType.error,
                       );
                     }
                   },
@@ -298,8 +397,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       await ApiService.deleteEmergencyContact(userId: widget.userId, contactId: contactId);
       _loadProfile();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
+      AppSnackBar.show(
+        context,
+        e.toString().replaceAll("Exception:", "").trim(),
+        type: AppSnackBarType.error,
       );
     }
   }
@@ -309,8 +410,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       await ApiService.setPrimaryContact(userId: widget.userId, contactId: contactId);
       _loadProfile();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceAll("Exception:", "").trim())),
+      AppSnackBar.show(
+        context,
+        e.toString().replaceAll("Exception:", "").trim(),
+        type: AppSnackBarType.error,
       );
     }
   }
@@ -463,13 +566,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             children: [
               IconButton(
                 tooltip: "Notifications",
-                onPressed: () {
-                  Navigator.push(
+                onPressed: () async {
+                  await Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const NotificationsScreen()),
                   );
+                  if (!mounted) return;
+                  _loadUnreadNotificationState();
                 },
-                icon: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+                icon: Badge(
+                  isLabelVisible: hasUnreadNotifications,
+                  backgroundColor: Colors.redAccent,
+                  smallSize: 8,
+                  child: const Icon(Icons.notifications_none_rounded, color: Colors.white),
+                ),
               ),
             ],
           ),
@@ -488,7 +598,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   border: Border.all(color: Colors.white, width: 3),
                   color: Colors.white.withValues(alpha: 0.30),
                 ),
-                child: const Icon(Icons.person_rounded, color: Colors.white, size: 42),
+                child: _buildProfileAvatar(),
               ),
               InkWell(
                 onTap: () async {
@@ -500,6 +610,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         userId: widget.userId,
                         initialName: name,
                         initialEmail: email,
+                        initialPhone: phone,
+                        initialFaceImage: faceImage,
                       ),
                     ),
                   );
@@ -541,13 +653,55 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ),
           ),
 
+          if (!loading && phone.trim().isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              phone,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 8),
+
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.20),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  aadharVerified ? Icons.verified_rounded : Icons.error_outline_rounded,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  aadharVerified ? "Aadhaar Verified" : "Aadhaar Not Verified",
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           const SizedBox(height: 12),
 
           // ✅ Premium badge
           GestureDetector(
-            onTap: () {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
-            },
+            onTap: isPremium
+                ? null
+                : () {
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
+                  },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
               decoration: BoxDecoration(
@@ -564,14 +718,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    isPremium ? "Premium Member" : "Free Member",
+                    isPremium ? "Premium Member" : "Upgrade to Premium",
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 18),
+                  if (!isPremium) ...[
+                    const SizedBox(width: 8),
+                    const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 18),
+                  ],
                 ],
               ),
             ),
@@ -579,6 +735,26 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ],
       ),
     );
+  }
+
+  Widget _buildProfileAvatar() {
+    if (faceImage.trim().isEmpty) {
+      return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
+    }
+
+    try {
+      final bytes = base64Decode(faceImage);
+      return ClipOval(
+        child: Image.memory(
+          bytes,
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+        ),
+      );
+    } catch (_) {
+      return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
+    }
   }
 
   void _showPrivacyBottomSheet() {
@@ -677,11 +853,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
           _OptionRow(
             icon: Icons.help_outline_rounded,
             title: "Help & Support",
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Help & Support screen coming soon ✅")),
-              );
-            },
+            onTap: () {},
           ),
 
           _OptionRow(
@@ -768,10 +940,32 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Future<void> _logout() async {
-    await ApiService.logout();
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.logout();
     if (!mounted) return;
 
-    Navigator.of(context).pushNamedAndRemoveUntil("/login", (route) => false);
+    Navigator.of(context, rootNavigator: true)
+        .pushNamedAndRemoveUntil("/login", (route) => false);
   }
 
   // =======================
@@ -780,27 +974,28 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   Widget _buildActionButtons() {
     return Column(
       children: [
-        ElevatedButton(
-          onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
-          },
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Theme.of(context).primaryColor,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            minimumSize: const Size(double.infinity, 52),
+        if (!isPremium) ...[
+          ElevatedButton(
+            onPressed: () {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const PremiumScreen()));
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              minimumSize: const Size(double.infinity, 52),
+            ),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.workspace_premium_rounded, size: 20),
+                SizedBox(width: 8),
+                Text("Upgrade to Premium", style: TextStyle(fontWeight: FontWeight.w800)),
+              ],
+            ),
           ),
-          child: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.workspace_premium_rounded, size: 20),
-              SizedBox(width: 8),
-              Text("Upgrade to Premium", style: TextStyle(fontWeight: FontWeight.w800)),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
 
         OutlinedButton(
           onPressed: _logout,
@@ -897,17 +1092,44 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
   Future<void> _loadProfileFromCache() async {
     final prefs = await SharedPreferences.getInstance();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authUser = authProvider.currentUser;
+
+    if (authUser != null && mounted) {
+      setState(() {
+        name = _resolveDisplayName(authProvider);
+        email = _resolveDisplayEmail(authProvider);
+        phone = authUser.phone;
+        faceImage = authUser.faceImage;
+        aadharVerified = authUser.aadharVerified;
+        hasLocalData = true;
+        loading = false;
+      });
+    }
+
     final cachedProfile = prefs.getString(_profileKey(widget.userId));
     final cachedContacts = prefs.getString(_contactsKey(widget.userId));
 
     if (cachedProfile == null) return;
 
     final profileJson = jsonDecode(cachedProfile) as Map<String, dynamic>;
+    final cachedEmail = (profileJson["email"] ?? "").toString().trim().toLowerCase();
+    final authEmail = (authUser?.email ?? "").trim().toLowerCase();
+
+    if (authEmail.isNotEmpty && cachedEmail.isNotEmpty && cachedEmail != authEmail) {
+      await prefs.remove(_profileKey(widget.userId));
+      await prefs.remove(_contactsKey(widget.userId));
+      return;
+    }
+
     final contactsJson = cachedContacts != null ? jsonDecode(cachedContacts) as List : [];
 
     setState(() {
-      name = profileJson["name"] ?? "User";
-      email = profileJson["email"] ?? "email@email.com";
+      name = _resolveDisplayName(authProvider, (profileJson["name"] ?? "").toString());
+      email = _resolveDisplayEmail(authProvider, (profileJson["email"] ?? "").toString());
+      phone = (profileJson["phone"] ?? "").toString();
+      faceImage = (profileJson["face_image"] ?? "").toString();
+      aadharVerified = profileJson["aadhar_verified"] ?? false;
       isPremium = profileJson["isPremium"] ?? false;
 
       final stats = profileJson["stats"] ?? {};
@@ -967,7 +1189,6 @@ class _StatsRow extends StatelessWidget {
         children: [
           _StatChip(value: safeDays.toString(), label: "Safe Days"),
           _StatChip(value: sosUsed.toString(), label: "SOS Used"),
-          _StatChip(value: checkins.toString(), label: "Check-ins"),
           _StatChip(value: guardians.toString(), label: "Guardians"),
         ],
       ),

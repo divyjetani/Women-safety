@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from fastapi import HTTPException, UploadFile
+from typing import Optional
 from config.settings import ANONYMOUS_RECORDINGS_DIR, FAKECALL_RECORDINGS_DIR
 from utils.logger import logger
 
@@ -52,8 +53,8 @@ class AnonymousRecordingService(RecordingService):
         end_lng: str,
         front_video: UploadFile,
         back_video: UploadFile,
-        start_image: UploadFile,
-        end_image: UploadFile,
+        start_image: Optional[UploadFile],
+        end_image: Optional[UploadFile],
     ) -> dict:
         RecordingService.ensure_directories()
         
@@ -66,11 +67,15 @@ class AnonymousRecordingService(RecordingService):
         start_img_path = ANONYMOUS_RECORDINGS_DIR / f"{unique_id}_start.jpg"
         end_img_path = ANONYMOUS_RECORDINGS_DIR / f"{unique_id}_end.jpg"
 
-        # Save files
+        # Save required files
         await RecordingService.save_uploaded_file(front_video, front_path)
         await RecordingService.save_uploaded_file(back_video, back_path)
-        await RecordingService.save_uploaded_file(start_image, start_img_path)
-        await RecordingService.save_uploaded_file(end_image, end_img_path)
+
+        # Save optional images
+        if start_image is not None:
+            await RecordingService.save_uploaded_file(start_image, start_img_path)
+        if end_image is not None:
+            await RecordingService.save_uploaded_file(end_image, end_img_path)
 
         # Create metadata record
         new_record = {
@@ -84,8 +89,8 @@ class AnonymousRecordingService(RecordingService):
             "files": {
                 "front_video": str(front_path),
                 "back_video": str(back_path),
-                "start_image": str(start_img_path),
-                "end_image": str(end_img_path),
+                "start_image": str(start_img_path) if start_image is not None else "",
+                "end_image": str(end_img_path) if end_image is not None else "",
             },
             "uploaded_at": datetime.now().isoformat(),
         }
@@ -109,8 +114,8 @@ class FakecallRecordingService(RecordingService):
         end_lat: str,
         end_lng: str,
         back_video: UploadFile,
-        start_image: UploadFile,
-        end_image: UploadFile,
+        start_image: Optional[UploadFile],
+        end_image: Optional[UploadFile],
     ) -> dict:
         RecordingService.ensure_directories()
         
@@ -122,10 +127,14 @@ class FakecallRecordingService(RecordingService):
         start_img_path = FAKECALL_RECORDINGS_DIR / f"{unique_id}_start.jpg"
         end_img_path = FAKECALL_RECORDINGS_DIR / f"{unique_id}_end.jpg"
 
-        # Save files
+        # Save required file
         await RecordingService.save_uploaded_file(back_video, video_path)
-        await RecordingService.save_uploaded_file(start_image, start_img_path)
-        await RecordingService.save_uploaded_file(end_image, end_img_path)
+
+        # Save optional images
+        if start_image is not None:
+            await RecordingService.save_uploaded_file(start_image, start_img_path)
+        if end_image is not None:
+            await RecordingService.save_uploaded_file(end_image, end_img_path)
 
         # Create metadata record
         new_record = {
@@ -138,8 +147,8 @@ class FakecallRecordingService(RecordingService):
             "end_location": {"lat": end_lat, "lng": end_lng},
             "files": {
                 "back_video": str(video_path),
-                "start_image": str(start_img_path),
-                "end_image": str(end_img_path),
+                "start_image": str(start_img_path) if start_image is not None else "",
+                "end_image": str(end_img_path) if end_image is not None else "",
             },
             "uploaded_at": datetime.now().isoformat(),
         }

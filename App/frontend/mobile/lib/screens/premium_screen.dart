@@ -43,9 +43,6 @@ class PremiumScreen extends StatelessWidget {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Payment integration later ✅")),
-                  );
                 },
                 child: const Text("Continue to Payment"),
               ),

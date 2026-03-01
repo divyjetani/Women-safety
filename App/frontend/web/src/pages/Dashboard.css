@@ -14,9 +14,10 @@
 
 .notification-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
+  top: 30px;
+  right: 30px;
   background: var(--primary);
+  z-index: 10;
   color: white;
   font-size: 0.7rem;
   font-weight: 700;

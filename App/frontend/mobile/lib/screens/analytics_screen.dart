@@ -4,6 +4,7 @@ import 'package:mobile/conn_url.dart';
 import 'package:shimmer/shimmer.dart';
 
 import '../app/theme.dart';
+import '../services/api_service.dart';
 import '../network/dio_client.dart';
 import '../network/dio_error.dart';
 
@@ -23,6 +24,7 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
 
   AnalyticsResponse? data;
   bool loading = true;
+  bool isPremium = false;
   String? errorMessage;
 
   @override
@@ -44,6 +46,18 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
         loading = true;
         errorMessage = null;
       });
+
+      final currentUser = await ApiService.getCurrentUser();
+      if (currentUser != null) {
+        try {
+          final profile = await ApiService.getProfile(currentUser.id);
+          isPremium = profile["isPremium"] == true;
+        } catch (_) {
+          isPremium = false;
+        }
+      } else {
+        isPremium = false;
+      }
 
       final res = await api.fetchAnalytics();
 
@@ -144,37 +158,48 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
 
                 const SizedBox(height: 18),
 
+                if (!loading && !isPremium) ...[
+                  _premiumLockedCard(context),
+                  const SizedBox(height: 18),
+                ],
+
                 // ✅ Stats Cards (4 clickable)
                 loading
                     ? _statsSkeletonRow(context)
-                    : _StatsGrid(
-                  stats: data!.stats,
-                  onTap: (stat) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => StatDetailScreen(
-                          statId: stat.id,
-                          api: api,
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                    : isPremium
+                    ? _StatsGrid(
+                        stats: data!.stats,
+                        onTap: (stat) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => StatDetailScreen(
+                                statId: stat.id,
+                                api: api,
+                              ),
+                            ),
+                          );
+                        },
+                      )
+                    : _lockedAnalyticsCard(context, title: 'Detailed Stats locked'),
 
                 const SizedBox(height: 18),
 
                 // ✅ Peak Threat Hours
                 loading
                     ? _skeletonBlock(context, height: 170, radius: 22)
-                    : _PeakHoursCard(items: data!.peakHours),
+                    : isPremium
+                    ? _PeakHoursCard(items: data!.peakHours)
+                    : _lockedAnalyticsCard(context, title: 'Peak Threat Hours locked'),
 
                 const SizedBox(height: 18),
 
                 // ✅ Safety Tips fetched from backend
                 loading
                     ? _skeletonBlock(context, height: 230, radius: 22)
-                    : _SafetyTipsCard(tips: data!.safetyTips),
+                    : isPremium
+                    ? _SafetyTipsCard(tips: data!.safetyTips)
+                    : _lockedAnalyticsCard(context, title: 'Advanced Safety Tips locked'),
 
                 const SizedBox(height: 28),
               ],
@@ -230,6 +255,80 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
           child: _skeletonBlock(context, height: 110, radius: 18),
         ),
       ],
+    );
+  }
+
+  Widget _premiumLockedCard(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.lock_rounded,
+            color: Theme.of(context).primaryColor,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Upgrade to Premium to see full analytics.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lockedAnalyticsCard(BuildContext context, {required String title}) {
+    return Container(
+      width: double.infinity,
+      height: 140,
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 30,
+              color: Theme.of(context).primaryColor,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Premium required',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

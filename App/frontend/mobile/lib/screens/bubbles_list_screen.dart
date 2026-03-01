@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:mobile/providers/bubble_provider.dart';
 import 'package:mobile/screens/bubble_members_screen.dart';
 import 'package:mobile/screens/create_bubble_screen.dart';
+import 'package:mobile/widgets/app_snackbar.dart';
 import 'package:mobile/screens/join_bubble_screen.dart';
 
 class BubblesListScreen extends StatefulWidget {
@@ -218,12 +219,7 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                                   .toList(),
                             ),
                             if (bubble.members.length > 5)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Text(
-                                  '+${bubble.members.length - 5} more',
-                                  style: const TextStyle(
-                                    fontSize: 10,
+            AppSnackBar.show(context, 'Bubble deleted', type: AppSnackBarType.warning);
                                     color: Color(0xFFB4BCD0),
                                     fontStyle: FontStyle.italic,
                                   ),
@@ -409,12 +405,7 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
             onPressed: () {
               context.read<BubbleProvider>().deleteBubble(code);
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Bubble deleted'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              AppSnackBar.show(context, 'Bubble deleted', type: AppSnackBarType.warning);
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
