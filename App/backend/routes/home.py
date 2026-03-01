@@ -12,13 +12,34 @@ async def get_home_safety_stats(user_id: int = Query(...)):
     doc = await home_stats_col.find_one({"user_id": user_id}, {"_id": 0})
     if not doc:
         return {
+            "safety_score": 80,
+            "safe_zones": 0,
+            "alerts_today": 0,
+            "checkins": 0,
+            "sos_used": 0,
             "safetyScore": 80,
             "safeZones": 0,
             "alertsToday": 0,
-            "checkins": 0,
             "sosUsed": 0,
         }
-    return doc
+
+    safety_score = doc.get("safety_score", doc.get("safetyScore", 80))
+    safe_zones = doc.get("safe_zones", doc.get("safeZones", 0))
+    alerts_today = doc.get("alerts_today", doc.get("alertsToday", 0))
+    checkins = doc.get("checkins", 0)
+    sos_used = doc.get("sos_used", doc.get("sosUsed", 0))
+
+    return {
+        "safety_score": safety_score,
+        "safe_zones": safe_zones,
+        "alerts_today": alerts_today,
+        "checkins": checkins,
+        "sos_used": sos_used,
+        "safetyScore": safety_score,
+        "safeZones": safe_zones,
+        "alertsToday": alerts_today,
+        "sosUsed": sos_used,
+    }
 
 
 @router.get("/recent-activity")

@@ -29,6 +29,31 @@ class MainActivity : FlutterActivity() {
                         val bubbleCode = call.argument<String>("bubbleCode")
                         val userId = call.argument<Int>("userId")
                         val incognito = call.argument<Boolean>("incognito") ?: false
+
+                        if (bubbleCode.isNullOrBlank() || userId == null || userId <= 0) {
+                            result.error(
+                                "INVALID_ARGS",
+                                "bubbleCode/userId is missing for background location service",
+                                null
+                            )
+                            return@setMethodCallHandler
+                        }
+
+                        val prefs = getSharedPreferences("bubble_app", MODE_PRIVATE)
+                        val saved = prefs.edit()
+                            .putString("selected_bubble_code", bubbleCode)
+                            .putInt("user_id", userId)
+                            .putBoolean("incognito_mode", incognito)
+                            .commit()
+
+                        if (!saved) {
+                            result.error(
+                                "PREF_WRITE_FAILED",
+                                "Failed to persist background location context",
+                                null
+                            )
+                            return@setMethodCallHandler
+                        }
                         
                         // Request location permission first
                         val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

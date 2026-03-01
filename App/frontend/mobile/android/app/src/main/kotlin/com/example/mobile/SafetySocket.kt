@@ -24,15 +24,18 @@ object SafetySocket {
 
     private var appContext: Context? = null
     private var threatCallback: (() -> Unit)? = null
+    private var readyCallback: (() -> Unit)? = null
+    @Volatile private var lastNotReadyLogAt = 0L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // =========================
     // CONNECT
     // =========================
-    fun connect(context: Context, onThreat: () -> Unit) {
+    fun connect(context: Context, onThreat: () -> Unit, onReady: (() -> Unit)? = null) {
         appContext = context.applicationContext
         threatCallback = onThreat
+        readyCallback = onReady
 
         if (client == null) {
             client = OkHttpClient.Builder()
@@ -57,7 +60,7 @@ object SafetySocket {
         Log.i("SafetySocket", "🔧 Opening WebSocket")
 
         val request = Request.Builder()
-            .url("ws://10.105.15.13:8000/ws") // emulator → host
+            .url("ws://10.189.91.13:8000/ws")
             .build()
 
         socket = client!!.newWebSocket(request, object : WebSocketListener() {
@@ -67,6 +70,7 @@ object SafetySocket {
                 readyForAudio = true
                 reconnecting.set(false)
                 Log.i("SafetySocket", "✅ WS OPEN (${response.code})")
+                readyCallback?.invoke()
             }
 
             override fun onMessage(ws: WebSocket, text: String) {
@@ -120,7 +124,11 @@ object SafetySocket {
             return // 🔕 audio disabled from notification
         }
         if (!readyForAudio || socket == null) {
-            Log.e("SafetySocket", "❌ WS not ready, dropping audio")
+            val now = System.currentTimeMillis()
+            if (now - lastNotReadyLogAt > 3000) {
+                Log.w("SafetySocket", "⚠️ WS not ready, dropping audio until connected")
+                lastNotReadyLogAt = now
+            }
             return
         }
 

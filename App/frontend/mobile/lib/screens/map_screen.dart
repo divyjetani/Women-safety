@@ -14,6 +14,7 @@ import 'package:mobile/widgets/create_bubble_dialog.dart';
 import 'package:mobile/widgets/join_bubble_dialog.dart';
 import 'package:mobile/widgets/map_search_bar.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/bubble_model.dart';
 import '../services/location_storage.dart';
@@ -92,6 +93,8 @@ class _MapScreenState extends State<MapScreen> {
 
   // for periodic location updates via WebSocket
   Timer? _locationTimer;
+  String? _lastSnackMessage;
+  DateTime? _lastSnackAt;
 
   // default fallback if no last location
   final LatLng _defaultCenter = const LatLng(23.0293515, 72.5530625); // Delhi
@@ -167,6 +170,10 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _initOnOpen() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedIncognito = prefs.getBool('incognito_mode') ?? false;
+    setState(() => _incognito = savedIncognito);
+
     // ✅ Fetch groups from backend
     try {
       final backendGroups = await ApiService.getUserBubbles();
@@ -307,8 +314,22 @@ class _MapScreenState extends State<MapScreen> {
 
       // Start periodic location updates via WebSocket
       _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+        try {
+          final pos = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.high,
+          );
+          final live = LatLng(pos.latitude, pos.longitude);
+          _myLocation = live;
+          await LocationStorage.saveLastLocation(live.latitude, live.longitude);
+          if (mounted) {
+            await _updateMarkers();
+          }
+        } catch (_) {
+          // keep last known location if fresh read fails
+        }
+
         if (_incognito) return;
-        
+
         final loc = _myLocation;
         if (loc == null || _wsService == null || !_wsService!.isConnected) return;
 
@@ -404,9 +425,9 @@ class _MapScreenState extends State<MapScreen> {
 
     // 🔵 My location
     if (_myLocation != null && user != null) {
-      final myIcon = await _letterMarker(
+      final myIcon = await _myPointerMarker(
         user.username[0].toUpperCase(),
-        Colors.blue,
+        Theme.of(context).primaryColor,
       );
 
       newMarkers.add(
@@ -414,6 +435,7 @@ class _MapScreenState extends State<MapScreen> {
           markerId: const MarkerId("me"),
           position: _myLocation!,
           icon: myIcon,
+          anchor: const Offset(0.5, 1.0),
           infoWindow: const InfoWindow(title: "📍 Me"),
         ),
       );
@@ -581,8 +603,85 @@ class _MapScreenState extends State<MapScreen> {
 
   void _showSnack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
+    final now = DateTime.now();
+    if (_lastSnackMessage == msg &&
+        _lastSnackAt != null &&
+        now.difference(_lastSnackAt!) < const Duration(milliseconds: 900)) {
+      return;
+    }
+
+    _lastSnackMessage = msg;
+    _lastSnackAt = now;
+
+    final theme = Theme.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+
+    messenger.removeCurrentSnackBar(reason: SnackBarClosedReason.remove);
+    messenger.clearSnackBars();
+
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        padding: EdgeInsets.zero,
+        duration: const Duration(seconds: 3),
+        dismissDirection: DismissDirection.horizontal,
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: theme.dividerColor.withOpacity(0.2),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: theme.colorScheme.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  msg,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurface,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(20),
+                onTap: () {
+                  messenger.hideCurrentSnackBar();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Icon(
+                    Icons.close,
+                    size: 18,
+                    color: theme.colorScheme.onSurface.withOpacity(0.75),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -660,6 +759,57 @@ class _MapScreenState extends State<MapScreen> {
     return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
   }
 
+  Future<BitmapDescriptor> _myPointerMarker(String letter, Color color) async {
+    final recorder = PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final fillPaint = Paint()..color = color;
+    final strokePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6;
+
+    final center = const Offset(48, 40);
+    const radius = 28.0;
+
+    // Head circle
+    canvas.drawCircle(center, radius, fillPaint);
+    canvas.drawCircle(center, radius, strokePaint);
+
+    // Pointer tail
+    final tail = Path()
+      ..moveTo(center.dx - 14, center.dy + 18)
+      ..lineTo(center.dx + 14, center.dy + 18)
+      ..lineTo(center.dx, 104)
+      ..close();
+    canvas.drawPath(tail, fillPaint);
+    canvas.drawPath(tail, strokePaint);
+
+    // Inner dot + letter
+    canvas.drawCircle(center, 12, Paint()..color = Colors.white.withOpacity(0.25));
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: letter,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 26,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    textPainter.paint(
+      canvas,
+      Offset(center.dx - textPainter.width / 2, center.dy - textPainter.height / 2),
+    );
+
+    final img = await recorder.endRecording().toImage(96, 112);
+    final bytes = await img.toByteData(format: ImageByteFormat.png);
+    return BitmapDescriptor.fromBytes(bytes!.buffer.asUint8List());
+  }
+
   Future<void> _confirmLocationSelection() async {
     if (_tempPinLocation == null) return;
 
@@ -721,7 +871,7 @@ class _MapScreenState extends State<MapScreen> {
                 zoom: _zoom,
               ),
               mapType: _mapType,
-              myLocationEnabled: true,
+              myLocationEnabled: false,
               myLocationButtonEnabled: false,
               compassEnabled: false, // we are making our own "north" btn
               zoomControlsEnabled: false,
@@ -974,7 +1124,7 @@ class _MapScreenState extends State<MapScreen> {
 
             // ✅ Help icon button (top-right)
             Positioned(
-              top: 120,
+              top: 60,
               right: 10,
               child: Container(
                 decoration: BoxDecoration(

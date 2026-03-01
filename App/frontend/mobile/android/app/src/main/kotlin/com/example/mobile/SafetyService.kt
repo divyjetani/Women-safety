@@ -25,6 +25,7 @@ class SafetyService : Service(), SensorEventListener {
     }
 
     private var running = true
+    @Volatile private var audioStarted = false
     private lateinit var audioRecorder: AudioRecord
     private lateinit var sensorManager: SensorManager
     private var proximitySensor: Sensor? = null
@@ -36,9 +37,11 @@ class SafetyService : Service(), SensorEventListener {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         // Start WebSocket connection when service starts
-        SafetySocket.connect(this) { onThreatDetected() }
-        // Start audio recording
-        startAudioRecording()
+        SafetySocket.connect(
+            this,
+            { onThreatDetected() },
+            { maybeStartAudioRecording() }
+        )
         // Start proximity sensing
         startProximitySensing()
     }
@@ -85,6 +88,12 @@ class SafetyService : Service(), SensorEventListener {
     // =========================
     // AUDIO RECORDING
     // =========================
+    private fun maybeStartAudioRecording() {
+        if (audioStarted) return
+        audioStarted = true
+        startAudioRecording()
+    }
+
     private fun startAudioRecording() {
         val sampleRate = 16000
         val bufferSize = AudioRecord.getMinBufferSize(

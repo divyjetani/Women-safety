@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app/auth_provider.dart';
+import '../app/main_tab_navigation.dart';
 import '../widgets/custom_bottom_navbar.dart';
 import 'home_screen.dart';
 import 'map_screen.dart';
@@ -40,7 +41,36 @@ class _MainScreenState extends State<MainScreen> {
     bool _incognito = false;
 
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: NotificationListener<NavigateToMainTabNotification>(
+        onNotification: (notification) {
+          if (_selectedIndex != notification.index) {
+            setState(() {
+              _selectedIndex = notification.index;
+            });
+          }
+          return true;
+        },
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final slide = Tween<Offset>(
+              begin: const Offset(0.06, 0),
+              end: Offset.zero,
+            ).animate(animation);
+
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(position: slide, child: child),
+            );
+          },
+          child: KeyedSubtree(
+            key: ValueKey<int>(_selectedIndex),
+            child: _screens[_selectedIndex],
+          ),
+        ),
+      ),
       bottomNavigationBar: Container(
         color: Colors.transparent,
         child: CustomBottomNavBar(

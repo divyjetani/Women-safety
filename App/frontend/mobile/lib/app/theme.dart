@@ -1,6 +1,39 @@
 // lib/app/theme.dart
 import 'package:flutter/material.dart';
 
+class _CoolPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _CoolPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    const begin = Offset(0.08, 0);
+    const end = Offset.zero;
+    const curve = Curves.easeOutCubic;
+
+    final slideTween = Tween(begin: begin, end: end).chain(
+      CurveTween(curve: curve),
+    );
+
+    final fadeTween = Tween<double>(begin: 0.0, end: 1.0).chain(
+      CurveTween(curve: curve),
+    );
+
+    return FadeTransition(
+      opacity: animation.drive(fadeTween),
+      child: SlideTransition(
+        position: animation.drive(slideTween),
+        child: child,
+      ),
+    );
+  }
+}
+
 class AppTheme {
   static const Color primaryColor = Color(0xFFE91E63);
   static const Color secondaryColor = Color(0xFFF8BBD0);
@@ -102,6 +135,16 @@ class AppTheme {
         onSurface: textPrimary,    // ✅ use onSurface
       ),
 
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _CoolPageTransitionsBuilder(),
+          TargetPlatform.iOS: _CoolPageTransitionsBuilder(),
+          TargetPlatform.linux: _CoolPageTransitionsBuilder(),
+          TargetPlatform.macOS: _CoolPageTransitionsBuilder(),
+          TargetPlatform.windows: _CoolPageTransitionsBuilder(),
+        },
+      ),
+
     );
   }
 
@@ -185,6 +228,16 @@ class AppTheme {
         secondary: secondaryColor,
         surface: const Color(0xFF1E1E1E),   // ✅ main surfaces/cards
         onSurface: Colors.white,            // ✅ text/icons on surface
+      ),
+
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: _CoolPageTransitionsBuilder(),
+          TargetPlatform.iOS: _CoolPageTransitionsBuilder(),
+          TargetPlatform.linux: _CoolPageTransitionsBuilder(),
+          TargetPlatform.macOS: _CoolPageTransitionsBuilder(),
+          TargetPlatform.windows: _CoolPageTransitionsBuilder(),
+        },
       ),
     );
   }

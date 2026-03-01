@@ -738,10 +738,15 @@ class ApiService {
   static Future<Map<String, dynamic>> fetchSafetyScore({
     required double lat,
     required double lng,
+    int? userId,
   }) async {
     return await _makeRequest(() async {
+      final uri = userId != null
+          ? Uri.parse('$baseUrl/safety-score?user_id=$userId')
+          : Uri.parse('$baseUrl/safety-score');
+
       return await http.post(
-        Uri.parse('$baseUrl/safety-score'),
+        uri,
         headers: await _headers(withAuth: true), // or false if no auth needed
         body: jsonEncode({
           "latitude": lat,

@@ -133,11 +133,21 @@ class LocationSharingService : Service() {
     }
 
     private fun shareLocation(location: Location) {
-        val bubbleCode = prefs.getString("selected_bubble_code", null)
-        val userId = prefs.getInt("user_id", -1)
+        var bubbleCode = prefs.getString("selected_bubble_code", null)
+        var userId = prefs.getInt("user_id", -1)
         val incognito = prefs.getBoolean("incognito_mode", false)
 
-        if (bubbleCode == null || userId == -1) {
+        if (bubbleCode.isNullOrBlank() || userId <= 0) {
+            val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            bubbleCode = bubbleCode ?: flutterPrefs.getString("flutter.selected_bubble_code", null)
+            userId = if (userId > 0) {
+                userId
+            } else {
+                flutterPrefs.getInt("flutter.user_id", -1)
+            }
+        }
+
+        if (bubbleCode.isNullOrBlank() || userId <= 0) {
             Log.w(TAG, "⚠️ No bubble code or user ID - cannot share location")
             return
         }
@@ -153,7 +163,7 @@ class LocationSharingService : Service() {
             }
 
             // Use the backend location sharing endpoint
-            val url = "http://10.105.15.13:8000/bubble/share-location"
+            val url = "http://10.189.91.13:8000/bubble/share-location"
 
             val request = object : JsonObjectRequest(
                 Method.POST, url, body,

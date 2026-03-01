@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:mobile/screens/notifications_screen.dart';
 // import 'package:mobile/screens/settings_screen.dart';
 import 'package:mobile/widgets/ask_ai_bar.dart';
@@ -11,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../app/auth_provider.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';
+import '../models/bubble_model.dart';
 
 import '../widgets/safety_card.dart';
 import '../widgets/stats_card.dart';
@@ -35,6 +37,9 @@ import 'package:mobile/screens/fake_call_screen.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:mobile/services/websocket_service.dart';
+import 'package:mobile/services/group_storage.dart';
+import 'package:mobile/services/background_location_service.dart';
+import '../app/main_tab_navigation.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -264,8 +269,19 @@ class _HomeScreenState extends State<HomeScreen> {
         ApiService.getRecentActivity(_userId),
       ]);
 
-      final stats = results[0] as SafetyStats;
+      var stats = results[0] as SafetyStats;
       final activities = results[1] as List<RecentActivity>;
+
+      final liveScore = await _fetchAndPersistCurrentSafetyScore();
+      if (liveScore != null) {
+        stats = SafetyStats(
+          safetyScore: liveScore,
+          safeZones: stats.safeZones,
+          alertsToday: stats.alertsToday,
+          checkins: stats.checkins,
+          sosUsed: stats.sosUsed,
+        );
+      }
 
       _timeoutTimer?.cancel();
       if (!mounted) return;
@@ -284,6 +300,40 @@ class _HomeScreenState extends State<HomeScreen> {
         _errorMessage = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<int?> _fetchAndPersistCurrentSafetyScore() async {
+    if (_userId <= 0) return null;
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return null;
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return null;
+      }
+
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final scoreResponse = await ApiService.fetchSafetyScore(
+        lat: pos.latitude,
+        lng: pos.longitude,
+        userId: _userId,
+      );
+
+      final risk = (scoreResponse['risk_score'] as num?)?.toDouble();
+      if (risk == null) return null;
+      return risk.round().clamp(0, 100);
+    } catch (_) {
+      return null;
     }
   }
 
@@ -858,10 +908,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 label: "Share\nLocation",
                 icon: Icons.share_location,
                 color: AppTheme.infoColor,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => QuickActionDetailsScreen(userId: _userId, action: "share_location")),
-                ),
+                onTap: _openShareLocationSheet,
               ),
               _quickActionTile(
                 label: "Emergency\nContacts",
@@ -899,6 +946,163 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _openShareLocationSheet() async {
+    final prefs = await SharedPreferences.getInstance();
+    final user = await ApiService.getCurrentUser();
+
+    List<SafetyGroup> groups = [];
+    try {
+      groups = await ApiService.getUserBubbles();
+    } catch (_) {
+      groups = await GroupStorage.loadGroups();
+    }
+
+    final selectedId = await GroupStorage.loadSelectedGroup();
+    SafetyGroup? currentGroup;
+    if (groups.isNotEmpty) {
+      currentGroup = selectedId != null
+          ? groups.firstWhere(
+              (g) => g.id == selectedId,
+              orElse: () => groups.first,
+            )
+          : groups.first;
+    }
+
+    if (!mounted) return;
+
+    bool incognito = prefs.getBool('incognito_mode') ?? false;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final members = currentGroup?.members ?? <GroupMember>[];
+            final sharingPeople = user == null
+                ? members
+                : members.where((m) => m.id != user.id.toString()).toList();
+
+            return Container(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 5,
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).dividerColor.withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'Location Sharing',
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Text(
+                        currentGroup == null
+                            ? 'No active bubble selected.'
+                            : 'Current Bubble: ${currentGroup.name} (${currentGroup.code ?? "No code"})',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Incognito Mode',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                        Switch(
+                          value: incognito,
+                          onChanged: (value) async {
+                            setSheetState(() => incognito = value);
+                            await prefs.setBool('incognito_mode', value);
+                            await BackgroundLocationService.setIncognitoMode(value);
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Sharing with',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    if (sharingPeople.isEmpty)
+                      Text(
+                        'No members currently receiving your location.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemBuilder: (context, index) {
+                            final member = sharingPeople[index];
+                            return ListTile(
+                              dense: true,
+                              contentPadding: EdgeInsets.zero,
+                              leading: CircleAvatar(
+                                radius: 16,
+                                child: Text(member.name[0].toUpperCase()),
+                              ),
+                              title: Text(member.name),
+                              subtitle: Text('Battery ${member.battery}%'),
+                              trailing: member.incognito
+                                  ? const Icon(Icons.visibility_off, size: 18)
+                                  : const Icon(Icons.visibility, size: 18),
+                            );
+                          },
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemCount: sharingPeople.length,
+                        ),
+                      ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          NavigateToMainTabNotification(1).dispatch(this.context);
+                        },
+                        icon: const Icon(Icons.map_outlined),
+                        label: const Text('Open Map Screen'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
