@@ -15,6 +15,7 @@ import 'package:mobile/widgets/join_bubble_dialog.dart';
 import 'package:mobile/widgets/map_search_bar.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bubble_model.dart';
 import '../services/location_storage.dart';
@@ -77,6 +78,8 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _myLocation;
   double _zoom = 15;
   bool _loadingLocation = true;
+  Map<String, dynamic>? _nearestPoliceStation;
+  bool _loadingNearestPolice = false;
 
   // map modes
   MapType _mapType = MapType.normal;
@@ -223,6 +226,7 @@ class _MapScreenState extends State<MapScreen> {
 
     // ✅ now try real location
     await _goToMyLocation(showSnackOnFail: false);
+    await _loadNearestPoliceStation();
 
     setState(() => _loadingLocation = false);
 
@@ -252,6 +256,62 @@ class _MapScreenState extends State<MapScreen> {
       print('✅ Background location sharing started for bubble: ${group.name}');
     } catch (e) {
       print('❌ Error starting background location sharing: $e');
+    }
+  }
+
+  Future<void> _loadNearestPoliceStation() async {
+    final loc = _myLocation;
+    if (loc == null) return;
+
+    if (mounted) {
+      setState(() => _loadingNearestPolice = true);
+    }
+
+    try {
+      final station = await ApiService.getNearestPoliceStation(
+        lat: loc.latitude,
+        lng: loc.longitude,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _nearestPoliceStation = station;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _nearestPoliceStation = null;
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _loadingNearestPolice = false);
+      }
+    }
+  }
+
+  Future<void> _openDirectionsToNearestPolice() async {
+    final station = _nearestPoliceStation;
+    if (station == null) return;
+
+    final destinationLat = station['lat'];
+    final destinationLng = station['lng'];
+    if (destinationLat == null || destinationLng == null) return;
+
+    final origin = _myLocation;
+    final Uri url;
+    if (origin != null) {
+      url = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&origin=${origin.latitude},${origin.longitude}&destination=$destinationLat,$destinationLng&travelmode=driving',
+      );
+    } else {
+      url = Uri.parse(
+        'https://www.google.com/maps/search/?api=1&query=$destinationLat,$destinationLng',
+      );
+    }
+
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      _showSnack('Could not open Google Maps directions');
     }
   }
 
@@ -427,6 +487,7 @@ class _MapScreenState extends State<MapScreen> {
         _zoom = 16;
       });
       await _updateMarkers();
+      await _loadNearestPoliceStation();
 
       await LocationStorage.saveLastLocation(live.latitude, live.longitude);
 
@@ -951,89 +1012,78 @@ class _MapScreenState extends State<MapScreen> {
               top: 8,
               left: 8,
               right: 8,
-              child: GroupBubbleBar(
-                groups: _groups,
-                currentGroup: _currentGroup,
-                onCreate: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => CreateBubbleDialog(
-                      onCreate: (name, icon, color) async {
-                        final res = await ApiService.createBubble(
-                          name: name,
-                          icon: icon.codePoint,
-                          color: color.value,
-                        );
+              child: Column(
+                children: [
+                  GroupBubbleBar(
+                    groups: _groups,
+                    currentGroup: _currentGroup,
+                    onCreate: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => CreateBubbleDialog(
+                          onCreate: (name, icon, color) async {
+                            final res = await ApiService.createBubble(
+                              name: name,
+                              icon: icon.codePoint,
+                              color: color.value,
+                            );
 
-                        setState(() {
-                          _groups.insert(0, res.group);
-                          _currentGroup = res.group;
-                        });
-                        
-                        // Save groups to storage
-                        await GroupStorage.saveGroups(_groups);
-                        await GroupStorage.saveSelectedGroup(res.group.id);
-                        
-                        // Restart WebSocket for new group
-                        _startWebSocketSharing();
-                        
-                        // Update markers
-                        await _updateMarkers();
+                            setState(() {
+                              _groups.insert(0, res.group);
+                              _currentGroup = res.group;
+                            });
 
-                        _showCodeDialog(res.code);
-                      },
-                    ),
-                  );
-                },
-                onJoin: () {
-                  showDialog(
-                    context: context,
-                    builder: (_) => JoinBubbleDialog(
-                      onJoin: (code) async {
-                        try {
-                          final group = await ApiService.joinBubbleByCode(code);
-                          
-                          setState(() {
-                            // Check if group already exists
-                            final existingIndex = _groups.indexWhere((g) => g.id == group.id);
-                            if (existingIndex >= 0) {
-                              _groups[existingIndex] = group;
-                            } else {
-                              _groups.insert(0, group);
+                            await GroupStorage.saveGroups(_groups);
+                            await GroupStorage.saveSelectedGroup(res.group.id);
+                            _startWebSocketSharing();
+                            await _updateMarkers();
+
+                            _showCodeDialog(res.code);
+                          },
+                        ),
+                      );
+                    },
+                    onJoin: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => JoinBubbleDialog(
+                          onJoin: (code) async {
+                            try {
+                              final group = await ApiService.joinBubbleByCode(code);
+
+                              setState(() {
+                                final existingIndex = _groups.indexWhere((g) => g.id == group.id);
+                                if (existingIndex >= 0) {
+                                  _groups[existingIndex] = group;
+                                } else {
+                                  _groups.insert(0, group);
+                                }
+                                _currentGroup = group;
+                              });
+
+                              await GroupStorage.saveGroups(_groups);
+                              await GroupStorage.saveSelectedGroup(group.id);
+                              _startWebSocketSharing();
+                              await _updateMarkers();
+
+                              _showSnack('Joined bubble: ${group.name}');
+                            } catch (e) {
+                              _showSnack('Failed to join: $e');
                             }
-                            _currentGroup = group;
-                          });
-                          
-                          // Save groups to storage
-                          await GroupStorage.saveGroups(_groups);
-                          await GroupStorage.saveSelectedGroup(group.id);
-                          
-                          // Restart WebSocket for joined group
-                          _startWebSocketSharing();
-                          
-                          // Update markers
-                          await _updateMarkers();
-                          
-                          _showSnack('Joined bubble: ${group.name}');
-                        } catch (e) {
-                          _showSnack('Failed to join: $e');
-                        }
-                      },
-                    ),
-                  );
-                },
-                onSelect: (g) async {
-                  setState(() => _currentGroup = g);
-                  await GroupStorage.saveSelectedGroup(g.id);
-                  
-                  // Restart WebSocket for selected group
-                  _startWebSocketSharing();
-                  
-                  await _updateMarkers();
-                },
+                          },
+                        ),
+                      );
+                    },
+                    onSelect: (g) async {
+                      setState(() => _currentGroup = g);
+                      await GroupStorage.saveSelectedGroup(g.id);
+                      _startWebSocketSharing();
+                      await _updateMarkers();
+                    },
+                  ),
+                ],
               ),
             ),
-
 
             // ✅ Left group strip
             MapGroupMembersStripLeft(
@@ -1205,6 +1255,23 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ),
             Positioned(
+              left: 75,
+              right: 65,
+              bottom: 10,
+              child: Column(
+                children: [
+                  if (_loadingNearestPolice)
+                    _nearestPoliceBanner('Finding nearest police station...', '', loading: true),
+                  if (!_loadingNearestPolice && _nearestPoliceStation != null)
+                    _nearestPoliceBanner(
+                      _nearestPoliceStation!['name']?.toString() ?? 'Nearest Police Station',
+                      'Distance: ${_nearestPoliceStation!['distance_km'] ?? '--'} km • ${_nearestPoliceStation!['address'] ?? ''}',
+                    ),
+                ],
+              ),
+            ),
+
+            Positioned(
               left: 14,
               bottom: 22,
               child: FloatingActionButton(
@@ -1292,6 +1359,56 @@ class _MapScreenState extends State<MapScreen> {
               color: theme.primaryColor,
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _nearestPoliceBanner(String title, String subtitle, {bool loading = false}) {
+    return Material(
+      elevation: 5,
+      borderRadius: BorderRadius.circular(14),
+      color: Theme.of(context).cardColor.withValues(alpha: 0.96),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.local_police, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  if (subtitle.isNotEmpty)
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+            if (!loading)
+              IconButton(
+                  onPressed: _openDirectionsToNearestPolice,
+                  icon: const Icon(Icons.directions, size: 18),
+                color: Theme.of(context).primaryColor,
+              ),
+            if (loading)
+              const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+          ],
         ),
       ),
     );

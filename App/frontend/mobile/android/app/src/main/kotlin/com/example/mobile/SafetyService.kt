@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 
 class SafetyService : Service(), SensorEventListener {
 
@@ -21,6 +22,7 @@ class SafetyService : Service(), SensorEventListener {
         const val NOTIFICATION_ID = 101
         const val NOTIFICATION_CHANNEL_ID = "safety_channel"
         const val ACTION_STOP_AUDIO = "com.example.mobile.STOP_AUDIO"
+        const val AUTO_SOS_CHANNEL_ID = "auto_sos_channel"
         @Volatile var audioSharingEnabled = true  // 👈 accessible from SafetySocket
     }
 
@@ -216,10 +218,41 @@ class SafetyService : Service(), SensorEventListener {
     // =========================
     private fun onThreatDetected() {
         Log.e("SafetyService", "🚨 THREAT DETECTED - triggering SOS")
-        val intent = Intent(this, MainActivity::class.java)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        intent.putExtra("AUTO_SOS", true)
-        startActivity(intent)
+        val reason = "Potential threat detected from real-time audio"
+
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("AUTO_SOS", true)
+            putExtra("AUTO_SOS_REASON", reason)
+        }
+
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            9001,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = NotificationCompat.Builder(this, AUTO_SOS_CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Automatic SOS Triggered")
+            .setContentText(reason)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setFullScreenIntent(pendingIntent, true)
+            .setContentIntent(pendingIntent)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(9001, notification)
+
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Log.w("SafetyService", "Unable to foreground app directly: ${e.message}")
+        }
     }
 
     // =========================
@@ -234,8 +267,17 @@ class SafetyService : Service(), SensorEventListener {
             )
             channel.description = "Audio & safety monitoring"
 
+            val autoSosChannel = NotificationChannel(
+                AUTO_SOS_CHANNEL_ID,
+                "Automatic SOS",
+                NotificationManager.IMPORTANCE_HIGH
+            )
+            autoSosChannel.description = "Shows full-screen automatic SOS interruption"
+            autoSosChannel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
+            manager.createNotificationChannel(autoSosChannel)
         }
     }
 }

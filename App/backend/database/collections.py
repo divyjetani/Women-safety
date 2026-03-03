@@ -21,6 +21,7 @@ def get_collections():
         "groups": db["groups"],
         "shares": db["shares"],
         "sos_events": db["sos_events"],
+        "police_stations": db["police_stations"],
     }
     
     return collections

@@ -238,6 +238,15 @@ class ApiService {
   static Future<SOSResponse> sendSOS({
     required int userId,
     required String location,
+    double? lat,
+    double? lng,
+    int? battery,
+    String triggerType = 'manual',
+    String? triggerReason,
+    String? bubbleCode,
+    String? cameraFrontImage,
+    String? cameraBackImage,
+    String? audio10sUrl,
     String? message,
   }) async {
     final jsonResponse = await _makeRequest(() async {
@@ -247,7 +256,16 @@ class ApiService {
         body: jsonEncode({
           'user_id': userId,
           'location': location,
+          'lat': lat,
+          'lng': lng,
+          'battery': battery,
+          'trigger_type': triggerType,
+          'trigger_reason': triggerReason,
           'message': message,
+          'bubble_code': bubbleCode,
+          'camera_front_image': cameraFrontImage,
+          'camera_back_image': cameraBackImage,
+          'audio_10s_url': audio10sUrl,
           'timestamp': DateTime.now().toIso8601String(),
         }),
       );
@@ -496,6 +514,63 @@ class ApiService {
       return await http.put(
         Uri.parse('$baseUrl/notifications/$userId/$notificationId/read'),
         headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> registerDeviceToken({
+    required int userId,
+    required String token,
+    String platform = 'android',
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/notifications/device-token'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'token': token,
+          'platform': platform,
+        }),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> resolveSosEvent({
+    required int userId,
+    required String eventId,
+    String? reason,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.patch(
+        Uri.parse('$baseUrl/sos/$eventId/resolve'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'resolved_by': 'user',
+          'reason': reason,
+        }),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> updateSosMedia({
+    required int userId,
+    required String eventId,
+    String? cameraFrontImage,
+    String? cameraBackImage,
+    String? audio10sUrl,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.patch(
+        Uri.parse('$baseUrl/sos/$eventId/media'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'camera_front_image': cameraFrontImage,
+          'camera_back_image': cameraBackImage,
+          'audio_10s_url': audio10sUrl,
+        }),
       );
     });
   }
@@ -882,6 +957,24 @@ class ApiService {
         }),
       );
     });
+  }
+
+  static Future<Map<String, dynamic>?> getNearestPoliceStation({
+    required double lat,
+    required double lng,
+  }) async {
+    final jsonResponse = await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/police-stations/nearest?lat=$lat&lng=$lng'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+
+    final station = jsonResponse['station'];
+    if (station is Map<String, dynamic>) {
+      return station;
+    }
+    return null;
   }
 
 

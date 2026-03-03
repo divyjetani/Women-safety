@@ -979,13 +979,13 @@ class _HomeScreenState extends State<HomeScreen> {
             childAspectRatio: 1.3,
             children: [
               _statsTapCard(
-                title: "Safe Zones",
-                value: '${data.safeZones}',
-                icon: Icons.security,
-                color: AppTheme.successColor,
+                title: "SOS Used",
+                value: '${data.sosUsed}',
+                icon: Icons.emergency,
+                color: AppTheme.dangerColor,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "safe_zones")),
+                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "sos_used")),
                 ),
               ),
               _statsTapCard(
@@ -999,13 +999,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               _statsTapCard(
-                title: "SOS Used",
-                value: '${data.sosUsed}',
-                icon: Icons.emergency,
-                color: AppTheme.dangerColor,
+                title: "Check-ins",
+                value: '${data.checkins}',
+                icon: Icons.check_circle_rounded,
+                color: AppTheme.infoColor,
                 onTap: () => Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "sos_used")),
+                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "checkins")),
+                ),
+              ),
+              _statsTapCard(
+                title: "Safety Score",
+                value: '${data.safetyScore}',
+                icon: Icons.shield_rounded,
+                color: AppTheme.successColor,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => StatsDetailsScreen(userId: _userId, type: "safety_score")),
                 ),
               ),
             ],
@@ -1364,46 +1374,137 @@ class _HomeScreenState extends State<HomeScreen> {
         title = "Activity";
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              // color: color.withOpacity(0.1),
-              shape: BoxShape.circle,
+    return InkWell(
+      onTap: () => _showRecentActivityDetail(activity, title, icon, color),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: color, size: 18),
             ),
-            child: Icon(icon, color: color, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 2),
+                  Text(
+                    activity.location,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).textTheme.bodySmall!.color!.withOpacity(0.65),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              activity.time,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).textTheme.bodySmall!.color!.withOpacity(0.65),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showRecentActivityDetail(
+    RecentActivity activity,
+    String title,
+    IconData icon,
+    Color color,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          const SizedBox(width: 12),
-          Expanded(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+          child: SafeArea(
+            top: false,
             child: Column(
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text(
-                  activity.location,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).textTheme.bodySmall!.color!.withOpacity(0.65),
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).dividerColor.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
+                ),
+                Row(
+                  children: [
+                    Icon(icon, color: color),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _detailRow('Type', activity.type),
+                _detailRow('Location', activity.location),
+                _detailRow('Time', activity.time),
+                _detailRow('Status', 'Recorded in your safety timeline'),
+                const SizedBox(height: 12),
+                Text(
+                  'Actionable note: keep trusted contacts updated when repeated alerts appear in the same area.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
             ),
           ),
-          Text(
-            activity.time,
-            style: TextStyle(
-              fontSize: 12,
-              color: Theme.of(context).textTheme.bodySmall!.color!.withOpacity(0.65),
+        );
+      },
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: Theme.of(context).textTheme.bodyMedium,
             ),
           ),
         ],

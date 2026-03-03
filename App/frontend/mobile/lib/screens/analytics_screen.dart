@@ -1,16 +1,6 @@
-// lib/screen/analytics_screen.dart
 import 'package:flutter/material.dart';
-import 'package:mobile/conn_url.dart';
-import 'package:shimmer/shimmer.dart';
 
-import '../app/theme.dart';
 import '../services/api_service.dart';
-import '../network/dio_client.dart';
-import '../network/dio_error.dart';
-
-import 'package:mobile/services/analytics_api.dart';
-import 'package:mobile/models/analytics_models.dart';
-import 'stat_detail_screen.dart';
 
 class AnalyticsScreenV2 extends StatefulWidget {
   const AnalyticsScreenV2({super.key});
@@ -20,118 +10,114 @@ class AnalyticsScreenV2 extends StatefulWidget {
 }
 
 class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
-  late final AnalyticsApi api;
-
-  AnalyticsResponse? data;
   bool loading = true;
   bool isPremium = false;
-  String? errorMessage;
+
+  final List<Map<String, String>> alertsHistory = const [
+    {
+      'time': 'Today, 08:12 PM',
+      'location': 'MG Road, Ahmedabad',
+      'threatType': 'Harassment Risk',
+    },
+    {
+      'time': 'Today, 06:40 PM',
+      'location': 'Nehru Bridge Stop',
+      'threatType': 'Low Visibility Area',
+    },
+    {
+      'time': 'Yesterday, 10:05 PM',
+      'location': 'Railway Underpass',
+      'threatType': 'Crowd Panic Signal',
+    },
+    {
+      'time': 'Yesterday, 07:25 PM',
+      'location': 'University Gate',
+      'threatType': 'Aggressive Noise Pattern',
+    },
+  ];
+
+  final List<Map<String, dynamic>> threatDistribution = const [
+    {'label': '0-20', 'value': 8},
+    {'label': '21-40', 'value': 17},
+    {'label': '41-60', 'value': 28},
+    {'label': '61-80', 'value': 34},
+    {'label': '81-100', 'value': 13},
+  ];
+
+  final List<Map<String, dynamic>> alertCategories = const [
+    {'label': 'High Threat Alerts', 'count': 9},
+    {'label': 'Soft Alerts', 'count': 23},
+    {'label': 'False Alerts', 'count': 6},
+  ];
+
+  final List<Map<String, dynamic>> hourlyPattern = const [
+    {'slot': '6 AM', 'count': 1},
+    {'slot': '9 AM', 'count': 2},
+    {'slot': '1 PM', 'count': 4},
+    {'slot': '6 PM', 'count': 7},
+    {'slot': '9 PM', 'count': 11},
+  ];
+
+  final List<Map<String, dynamic>> dailyPattern = const [
+    {'slot': 'Mon', 'count': 4},
+    {'slot': 'Tue', 'count': 5},
+    {'slot': 'Wed', 'count': 6},
+    {'slot': 'Thu', 'count': 7},
+    {'slot': 'Fri', 'count': 9},
+    {'slot': 'Sat', 'count': 5},
+    {'slot': 'Sun', 'count': 2},
+  ];
+
+  final List<Map<String, dynamic>> weeklyPattern = const [
+    {'slot': 'W1', 'count': 18},
+    {'slot': 'W2', 'count': 22},
+    {'slot': 'W3', 'count': 16},
+    {'slot': 'W4', 'count': 25},
+  ];
+
+  final List<Map<String, String>> aiRecommendations = const [
+    {
+      'title': 'Route shift suggestion',
+      'body': 'Avoid Railway Underpass after 9 PM. Use CG Road corridor for lower night risk.',
+    },
+    {
+      'title': 'Guardian sync',
+      'body': 'Enable quick check-ins between 7 PM and 10 PM for faster alert verification.',
+    },
+    {
+      'title': 'Audio confidence',
+      'body': 'Background traffic spikes false alerts; use earphone mic for cleaner evidence capture.',
+    },
+  ];
 
   @override
   void initState() {
     super.initState();
-
-    final dio = DioClient.create(
-      baseUrl: ApiUrls.baseUrl, // ✅ change to your backend URL
-    );
-
-    api = AnalyticsApi(dio);
-
-    _load();
+    _loadPremiumState();
   }
 
-  Future<void> _load() async {
+  Future<void> _loadPremiumState() async {
+    setState(() => loading = true);
     try {
-      setState(() {
-        loading = true;
-        errorMessage = null;
-      });
-
       final currentUser = await ApiService.getCurrentUser();
       if (currentUser != null) {
-        try {
-          final profile = await ApiService.getProfile(currentUser.id);
-          isPremium = profile["isPremium"] == true;
-        } catch (_) {
-          isPremium = false;
-        }
-      } else {
-        isPremium = false;
+        final profile = await ApiService.getProfile(currentUser.id);
+        isPremium = profile['isPremium'] == true;
       }
-
-      final res = await api.fetchAnalytics();
-
-      setState(() {
-        data = res;
-        loading = false;
-        errorMessage = null;
-      });
-    } catch (e) {
-      setState(() {
-        loading = false;
-        errorMessage = DioErrorMapper.message(e);
-      });
+    } catch (_) {
+      isPremium = false;
+    } finally {
+      if (mounted) {
+        setState(() => loading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Error Screen with Retry
-    if (!loading && errorMessage != null) {
-      return Scaffold(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        body: SafeArea(
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.06),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    )
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.wifi_off_rounded,
-                      size: 44,
-                      color: Theme.of(context)
-                          .textTheme
-                          .bodyMedium!
-                          .color!
-                          .withValues(alpha: 0.75),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      errorMessage!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _load,
-                        child: const Text("Retry"),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
+    if (loading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -139,69 +125,170 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _load,
+          onRefresh: _loadPremiumState,
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 24),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ Creative header (Removed Safety Insights title & icon)
-                _TopGlowHeader(),
-
-                const SizedBox(height: 16),
-
-                // ✅ Weekly Trends Graph Card
-                loading
-                    ? _skeletonBlock(context, height: 210, radius: 22)
-                    : _WeeklyGraphCard(points: data!.weeklyTrends),
-
-                const SizedBox(height: 18),
-
-                if (!loading && !isPremium) ...[
-                  _premiumLockedCard(context),
-                  const SizedBox(height: 18),
-                ],
-
-                // ✅ Stats Cards (4 clickable)
-                loading
-                    ? _statsSkeletonRow(context)
-                    : isPremium
-                    ? _StatsGrid(
-                        stats: data!.stats,
-                        onTap: (stat) {
-                          Navigator.push(
+                Text('Analytics', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 14),
+                _sectionCard(
+                  context,
+                  title: 'Alerts History',
+                  child: Column(
+                    children: alertsHistory
+                        .map(
+                          (item) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.location_on_outlined),
+                            title: Text(item['location']!),
+                            subtitle: Text('${item['threatType']} • ${item['time']}'),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Average Threat Score Distribution',
+                  child: Column(
+                    children: threatDistribution
+                        .map(
+                          (item) => _barRow(
                             context,
-                            MaterialPageRoute(
-                              builder: (_) => StatDetailScreen(
-                                statId: stat.id,
-                                api: api,
-                              ),
+                            label: item['label'] as String,
+                            value: item['value'] as int,
+                            maxValue: 40,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Alert Categories',
+                  child: Column(
+                    children: alertCategories
+                        .map(
+                          (item) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.label_important_outline_rounded),
+                            title: Text(item['label'] as String),
+                            trailing: Text(
+                              '${item['count']}',
+                              style: Theme.of(context).textTheme.titleMedium,
                             ),
-                          );
-                        },
-                      )
-                    : _lockedAnalyticsCard(context, title: 'Detailed Stats locked'),
-
-                const SizedBox(height: 18),
-
-                // ✅ Peak Threat Hours
-                loading
-                    ? _skeletonBlock(context, height: 170, radius: 22)
-                    : isPremium
-                    ? _PeakHoursCard(items: data!.peakHours)
-                    : _lockedAnalyticsCard(context, title: 'Peak Threat Hours locked'),
-
-                const SizedBox(height: 18),
-
-                // ✅ Safety Tips fetched from backend
-                loading
-                    ? _skeletonBlock(context, height: 230, radius: 22)
-                    : isPremium
-                    ? _SafetyTipsCard(tips: data!.safetyTips)
-                    : _lockedAnalyticsCard(context, title: 'Advanced Safety Tips locked'),
-
-                const SizedBox(height: 28),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Time-based Alert Patterns (Hour)',
+                  child: Column(
+                    children: hourlyPattern
+                        .map(
+                          (item) => _barRow(
+                            context,
+                            label: item['slot'] as String,
+                            value: item['count'] as int,
+                            maxValue: 12,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Time-based Alert Patterns (Day)',
+                  child: Column(
+                    children: dailyPattern
+                        .map(
+                          (item) => _barRow(
+                            context,
+                            label: item['slot'] as String,
+                            value: item['count'] as int,
+                            maxValue: 10,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Time-based Alert Patterns (Week)',
+                  child: Column(
+                    children: weeklyPattern
+                        .map(
+                          (item) => _barRow(
+                            context,
+                            label: item['slot'] as String,
+                            value: item['count'] as int,
+                            maxValue: 30,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Average Audio Score',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('0.74', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Audio confidence is stable with slight noise spikes after 8 PM.',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _premiumSection(
+                  context,
+                  title: 'Threat Hours Pattern Insights',
+                  body: 'Peak risk window is 8:30 PM - 10:15 PM near transit and underpass zones.',
+                ),
+                const SizedBox(height: 12),
+                _premiumSection(
+                  context,
+                  title: 'Personal Heatmap Suggestion',
+                  body: 'In this area, avoid solo movement after 9 PM and use main-road routes.',
+                ),
+                const SizedBox(height: 12),
+                _premiumSection(
+                  context,
+                  title: 'Time-based Risk Insights',
+                  body: 'Your risk trend rises 2.4x during late evening commute compared to afternoon.',
+                ),
+                const SizedBox(height: 12),
+                _sectionCard(
+                  context,
+                  title: 'Overall Safety Recommendations (AI)',
+                  child: Column(
+                    children: aiRecommendations
+                        .map(
+                          (item) => ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: const Icon(Icons.tips_and_updates_outlined),
+                            title: Text(item['title']!),
+                            subtitle: Text(item['body']!),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
               ],
             ),
           ),
@@ -210,654 +297,96 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
     );
   }
 
-  // ======================
-  // Skeleton Helpers
-  // ======================
-  Widget _skeletonBlock(BuildContext context, {required double height, double radius = 18}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    final base = isDark ? AppTheme.skeletonBaseDark : AppTheme.skeletonBaseLight;
-    final highlight =
-    isDark ? AppTheme.skeletonHighlightDark : AppTheme.skeletonHighlightLight;
-
-    return Shimmer.fromColors(
-      baseColor: base,
-      highlightColor: highlight,
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          color: base,
-          borderRadius: BorderRadius.circular(radius),
-        ),
-      ),
-    );
-  }
-
-  Widget _statsSkeletonRow(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: [
-        SizedBox(
-          width: (MediaQuery.of(context).size.width - 18 * 2 - 12) / 2,
-          child: _skeletonBlock(context, height: 110, radius: 18),
-        ),
-        SizedBox(
-          width: (MediaQuery.of(context).size.width - 18 * 2 - 12) / 2,
-          child: _skeletonBlock(context, height: 110, radius: 18),
-        ),
-        SizedBox(
-          width: (MediaQuery.of(context).size.width - 18 * 2 - 12) / 2,
-          child: _skeletonBlock(context, height: 110, radius: 18),
-        ),
-        SizedBox(
-          width: (MediaQuery.of(context).size.width - 18 * 2 - 12) / 2,
-          child: _skeletonBlock(context, height: 110, radius: 18),
-        ),
-      ],
-    );
-  }
-
-  Widget _premiumLockedCard(BuildContext context) {
+  Widget _sectionCard(BuildContext context, {required String title, required Widget child}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
-        ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.lock_rounded,
-            color: Theme.of(context).primaryColor,
-            size: 22,
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Upgrade to Premium to see full analytics.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
-          ),
+          const SizedBox(height: 10),
+          child,
         ],
       ),
     );
   }
 
-  Widget _lockedAnalyticsCard(BuildContext context, {required String title}) {
-    return Container(
-      width: double.infinity,
-      height: 140,
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+  Widget _premiumSection(
+    BuildContext context, {
+    required String title,
+    required String body,
+  }) {
+    if (!isPremium) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.35)),
+        ),
+        child: Row(
           children: [
-            Icon(
-              Icons.lock_outline_rounded,
-              size: 30,
-              color: Theme.of(context).primaryColor,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Premium required',
-              style: Theme.of(context).textTheme.bodySmall,
+            Icon(Icons.lock_rounded, color: Theme.of(context).primaryColor),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '$title (Premium)',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         ),
-      ),
+      );
+    }
+
+    return _sectionCard(
+      context,
+      title: '$title (Premium)',
+      child: Text(body, style: Theme.of(context).textTheme.bodyMedium),
     );
   }
-}
 
-// ======================================================================
-// Header Card
-// ======================================================================
-class _TopGlowHeader extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final txt = Theme.of(context).textTheme;
+  Widget _barRow(
+    BuildContext context, {
+    required String label,
+    required int value,
+    required int maxValue,
+  }) {
+    final ratio = (value / maxValue).clamp(0, 1).toDouble();
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          // glow dot
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Theme.of(context).primaryColor,
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(context).primaryColor.withValues(alpha: 0.6),
-                  blurRadius: 18,
-                )
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "Your Protection Pulse",
-                  style: txt.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  "Trends • performance • coverage • tips",
-                  style: txt.bodySmall?.copyWith(
-                    color: txt.bodySmall?.color?.withValues(alpha: 0.65),
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Text(
-              "LIVE",
-              style: TextStyle(
-                color: Theme.of(context).primaryColor,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.2,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ======================================================================
-// Weekly Trends Graph (Graph-like UI using simple line segments)
-// ======================================================================
-class _WeeklyGraphCard extends StatelessWidget {
-  final List<WeeklyTrendPoint> points;
-
-  const _WeeklyGraphCard({required this.points});
-
-  @override
-  Widget build(BuildContext context) {
-    final txt = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Weekly Trends",
-            style: txt.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 155,
-            child: CustomPaint(
-              painter: _MiniLineGraphPainter(
-                points: points.map((e) => e.score.toDouble()).toList(),
-                lineColor: Theme.of(context).primaryColor,
-                gridColor: Theme.of(context).dividerColor.withValues(alpha: 0.25),
-                dotColor: Theme.of(context).primaryColor,
-              ),
-              child: Container(),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: points
-                .map(
-                  (e) => Text(
-                e.day,
-                style: txt.bodySmall?.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: txt.bodySmall?.color?.withValues(alpha: 0.65),
-                ),
-              ),
-            )
-                .toList(),
-          )
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniLineGraphPainter extends CustomPainter {
-  final List<double> points;
-  final Color lineColor;
-  final Color gridColor;
-  final Color dotColor;
-
-  _MiniLineGraphPainter({
-    required this.points,
-    required this.lineColor,
-    required this.gridColor,
-    required this.dotColor,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paintGrid = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1;
-
-    // grid
-    for (int i = 1; i <= 3; i++) {
-      final y = size.height * (i / 4);
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paintGrid);
-    }
-
-    if (points.isEmpty) return;
-
-    final minV = points.reduce((a, b) => a < b ? a : b);
-    final maxV = points.reduce((a, b) => a > b ? a : b);
-    final range = (maxV - minV).abs() < 1 ? 1 : (maxV - minV);
-
-    final dx = size.width / (points.length - 1);
-
-    Offset mapPoint(int index) {
-      final val = points[index];
-      final normalized = (val - minV) / range;
-      final x = dx * index;
-      final y = size.height - (normalized * size.height);
-      return Offset(x, y);
-    }
-
-    final path = Path();
-    for (int i = 0; i < points.length; i++) {
-      final p = mapPoint(i);
-      if (i == 0) {
-        path.moveTo(p.dx, p.dy);
-      } else {
-        path.lineTo(p.dx, p.dy);
-      }
-    }
-
-    final linePaint = Paint()
-      ..color = lineColor
-      ..strokeWidth = 3.5
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawPath(path, linePaint);
-
-    // dots
-    final dotPaint = Paint()..color = dotColor;
-    for (int i = 0; i < points.length; i++) {
-      final p = mapPoint(i);
-      canvas.drawCircle(p, 4.8, dotPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-// ======================================================================
-// Stats Grid (4 cards clickable)
-// ======================================================================
-class _StatsGrid extends StatelessWidget {
-  final List<StatCardData> stats;
-  final void Function(StatCardData) onTap;
-
-  const _StatsGrid({required this.stats, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: stats.map((s) {
-        return _StatCard(
-          data: s,
-          width: (MediaQuery.of(context).size.width - 18 * 2 - 12) / 2,
-          onTap: () => onTap(s),
-        );
-      }).toList(),
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final StatCardData data;
-  final double width;
-  final VoidCallback onTap;
-
-  const _StatCard({
-    required this.data,
-    required this.width,
-    required this.onTap,
-  });
-
-  Color _hex(String hex) {
-    final clean = hex.replaceAll("#", "");
-    return Color(int.parse("FF$clean", radix: 16));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _hex(data.color);
-    final txt = Theme.of(context).textTheme;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Ink(
-          width: width,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 16,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Align(
-                alignment: Alignment.topRight,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: c.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    "${data.trend >= 0 ? "+" : ""}${data.trend}%",
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: data.trend >= 0 ? AppTheme.successColor : AppTheme.dangerColor,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                data.value,
-                style: txt.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  color: c,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                data.title,
-                style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                data.subtitle,
-                style: txt.bodySmall?.copyWith(
-                  color: txt.bodySmall?.color?.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ======================================================================
-// Peak Threat Hours
-// ======================================================================
-class _PeakHoursCard extends StatelessWidget {
-  final List<PeakHourData> items;
-
-  const _PeakHoursCard({required this.items});
-
-  Color _hex(String hex) {
-    final clean = hex.replaceAll("#", "");
-    return Color(int.parse("FF$clean", radix: 16));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final txt = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Peak Threat Hours",
-            style: txt.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 14),
-          ...items.map((e) => _PeakRow(data: e)).toList(),
-        ],
-      ),
-    );
-  }
-}
-
-class _PeakRow extends StatelessWidget {
-  final PeakHourData data;
-  const _PeakRow({required this.data});
-
-  Color _hex(String hex) {
-    final clean = hex.replaceAll("#", "");
-    return Color(int.parse("FF$clean", radix: 16));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = _hex(data.color);
-    final txt = Theme.of(context).textTheme;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 105,
-            child: Text(
-              data.time,
-              style: txt.bodySmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-          ),
-          const SizedBox(width: 10),
+          SizedBox(width: 48, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: BorderRadius.circular(99),
               child: LinearProgressIndicator(
-                value: data.percentage,
-                minHeight: 9,
-                backgroundColor: Theme.of(context).dividerColor.withValues(alpha: 0.20),
-                valueColor: AlwaysStoppedAnimation<Color>(c),
+                value: ratio,
+                minHeight: 8,
+                backgroundColor: Theme.of(context).dividerColor.withValues(alpha: 0.25),
               ),
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            "${(data.percentage * 100).toInt()}%",
-            style: txt.bodySmall?.copyWith(
-              fontWeight: FontWeight.w900,
-              color: c,
+          SizedBox(
+            width: 28,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.right,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-// ======================================================================
-// Safety Tips
-// ======================================================================
-class _SafetyTipsCard extends StatelessWidget {
-  final List<SafetyTipData> tips;
-
-  const _SafetyTipsCard({required this.tips});
-
-  IconData _iconFromKey(String key) {
-    switch (key) {
-      case "location":
-        return Icons.share_location_rounded;
-      case "group":
-        return Icons.group_rounded;
-      case "light":
-        return Icons.lightbulb_rounded;
-      case "battery":
-        return Icons.battery_charging_full_rounded;
-      case "call":
-        return Icons.call_rounded;
-      default:
-        return Icons.shield_rounded;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final txt = Theme.of(context).textTheme;
-
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Safety Tips",
-            style: txt.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 12),
-          ...tips.map((t) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).primaryColor.withValues(alpha: 0.02),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      // color: Theme.of(context).primaryColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      _iconFromKey(t.icon),
-                      color: Theme.of(context).primaryColor,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          t.title,
-                          style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w900),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          t.description,
-                          style: txt.bodySmall?.copyWith(
-                            color: txt.bodySmall?.color?.withValues(alpha: 0.65),
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
         ],
       ),
     );

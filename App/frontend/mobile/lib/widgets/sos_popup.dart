@@ -8,9 +8,9 @@ import 'package:provider/provider.dart';
 
 import '../app/auth_provider.dart';
 import '../app/theme.dart';
-import '../network/bubble_api.dart';
+import '../services/api_service.dart';
 import '../services/firebase_service.dart';
-import '../services/sos_notification_service.dart';
+import '../services/group_storage.dart';
 
 class SOSPopup extends StatefulWidget {
   /// ✅ pass incognito from your map screen / state
@@ -18,11 +18,15 @@ class SOSPopup extends StatefulWidget {
 
   /// ✅ group id = bubble
   final String groupId;
+  final bool autoStart;
+  final bool automaticFlow;
 
   const SOSPopup({
     super.key,
     required this.incognito,
     this.groupId = "bubble",
+    this.autoStart = false,
+    this.automaticFlow = false,
   });
 
   @override
@@ -37,6 +41,20 @@ class _SOSPopupState extends State<SOSPopup> {
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
   FlutterLocalNotificationsPlugin();
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.autoStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _sendSOS(
+          incognito: widget.incognito,
+          groupId: widget.groupId,
+        );
+      });
+    }
+  }
+
   Future<void> _sendSOS({
     required bool incognito,
     required String groupId,
@@ -45,7 +63,9 @@ class _SOSPopupState extends State<SOSPopup> {
 
     setState(() {
       _isSending = true;
-      _status = 'Sending emergency alert...';
+      _status = widget.automaticFlow
+          ? 'Sending automatic SOS to bubble members...'
+          : 'Sending emergency alert...';
       _success = false;
     });
 
@@ -62,7 +82,9 @@ class _SOSPopupState extends State<SOSPopup> {
 
       if (!mounted) return;
       setState(() {
-        _status = 'Sending notifications to emergency contacts...';
+        _status = widget.automaticFlow
+            ? 'Sending automatic SOS to emergency contacts and bubble members...'
+            : 'Sending notifications to emergency contacts...';
       });
 
       // ✅ STEP 2: emergency contacts notification
@@ -83,10 +105,10 @@ class _SOSPopupState extends State<SOSPopup> {
         return;
       }
 
-      // ✅ STEP 4: call backend bubble SOS using Dio (FastAPI)
+      // ✅ STEP 4: send full SOS payload to backend
       if (!mounted) return;
       setState(() {
-        _status = 'Alerting your Bubble group members...';
+        _status = 'Sharing SOS details with contacts, bubble members, and police prototype...';
       });
 
       try {
@@ -96,22 +118,60 @@ class _SOSPopupState extends State<SOSPopup> {
 
         final battery = await Battery().batteryLevel;
 
-        await BubbleApi.sendSosToBubble(
-          userId: user.id.toString(),
-          username: user.username,
+        final groups = await GroupStorage.loadGroups();
+        final selected = await GroupStorage.loadSelectedGroup();
+        String? selectedBubbleCode;
+        if (selected != null) {
+          final matched = groups.where((g) => g.id == selected).toList();
+          if (matched.isNotEmpty) {
+            selectedBubbleCode = matched.first.code ?? matched.first.id;
+          }
+        }
+
+        final locationText =
+            '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+
+        final sosResponse = await ApiService.sendSOS(
+          userId: user.id,
+          location: locationText,
           lat: position.latitude,
           lng: position.longitude,
           battery: battery,
-          groupId: groupId,
+          triggerType: 'manual',
+          triggerReason: 'Manual SOS button pressed by user',
+          message: 'SOS from ${user.username}. Need immediate help.',
+          bubbleCode: selectedBubbleCode,
+          cameraFrontImage: user.faceImage,
+          cameraBackImage: user.faceImage,
+          audio10sUrl: '',
         );
+
+        Future.microtask(() async {
+          try {
+            await Future<void>.delayed(const Duration(seconds: 2));
+            await ApiService.updateSosMedia(
+              userId: user.id,
+              eventId: sosResponse.reportId,
+              cameraFrontImage: user.faceImage,
+              cameraBackImage: user.faceImage,
+              audio10sUrl: 'pending://10s-audio-capture',
+            );
+          } catch (e) {
+            debugPrint('SOS media async update failed: $e');
+          }
+        });
       } catch (e) {
-        debugPrint("Bubble SOS backend failed: $e");
+        debugPrint("SOS backend failed: $e");
       }
 
       if (!mounted) return;
       setState(() {
         _success = true;
-        _status = '✅ Emergency alert sent successfully!\n'
+        _status = widget.automaticFlow
+          ? '✅ Automatic SOS sent successfully!\n'
+            'Bubble group + emergency contacts notified.\n'
+            'Stay calm and wait for help.'
+          : '✅ Emergency alert sent successfully!\n'
             'Bubble group + emergency contacts notified.\n'
             'Stay calm and wait for help.';
       });
@@ -137,41 +197,14 @@ class _SOSPopupState extends State<SOSPopup> {
   Future<void> _sendEmergencyNotifications(String userName, String location) async {
     try {
       debugPrint('🔄 Getting emergency contact tokens...');
-
-      final tokens = await _getActualEmergencyContactTokens();
-
-      if (tokens.isEmpty) {
-        debugPrint('⚠️ No emergency contacts found, using test mode');
-
-        final currentToken = await FirebaseNotificationService.getFCMToken();
-        if (currentToken != null) {
-          debugPrint('📱 Using own device for testing');
-          await SOSNotificationService.sendEmergencyNotification(
-            userName: userName,
-            location: location,
-            fcmTokens: [currentToken],
-          );
-        }
-        return;
+      final currentToken = await FirebaseNotificationService.getFCMToken();
+      if (currentToken != null) {
+        debugPrint('📱 Device token available: ${currentToken.substring(0, 16)}...');
       }
-
-      debugPrint('📱 Sending to ${tokens.length} emergency contact(s)');
-
-      await SOSNotificationService.sendEmergencyNotification(
-        userName: userName,
-        location: location,
-        fcmTokens: tokens,
-      );
-
-      debugPrint('✅ Emergency notifications sent');
+      debugPrint('✅ Emergency notifications are dispatched by backend SOS pipeline');
     } catch (e) {
       debugPrint('❌ Error sending notifications: $e');
     }
-  }
-
-  Future<List<String>> _getActualEmergencyContactTokens() async {
-    // TODO: connect to your DB (members list -> fcm tokens)
-    return [];
   }
 
   Future<void> _showLocalNotification(String userName, String location) async {

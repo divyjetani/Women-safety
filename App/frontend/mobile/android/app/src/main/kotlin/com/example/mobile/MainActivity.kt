@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -16,10 +17,37 @@ class MainActivity : FlutterActivity() {
     private val PERMISSION_REQ = 101
     private val LOCATION_PERMISSION_REQ = 102
     private val BG_LOCATION_CHANNEL = "com.example.mobile/bg_location"
+    private val SOS_TRIGGER_CHANNEL = "sos_trigger"
+
+    private var sosChannel: MethodChannel? = null
+    private var pendingAutoSosReason: String? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         SOSBridge.register(flutterEngine, this)
+
+        sosChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SOS_TRIGGER_CHANNEL)
+        sosChannel?.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "consumePendingAutoSOS" -> {
+                    val reason = pendingAutoSosReason
+                    if (reason == null) {
+                        result.success(null)
+                    } else {
+                        pendingAutoSosReason = null
+                        result.success(mapOf(
+                            "pending" to true,
+                            "reason" to reason
+                        ))
+                    }
+                }
+                "clearPendingAutoSOS" -> {
+                    pendingAutoSosReason = null
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
         
         // Register background location method channel
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, BG_LOCATION_CHANNEL)
@@ -105,7 +133,31 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureAutoSosFromIntent(intent)
         requestCriticalPermissions()
+    }
+
+    private fun captureAutoSosFromIntent(intent: Intent?) {
+        if (intent == null) return
+
+        if (intent.getBooleanExtra("AUTO_SOS", false)) {
+            val reason = intent.getStringExtra("AUTO_SOS_REASON")
+                ?: "Automatic risk trigger detected"
+            pendingAutoSosReason = reason
+            Log.i("MainActivity", "Queued AUTO_SOS intent | reason=$reason")
+        }
+    }
+
+    private fun dispatchPendingAutoSosIfPossible() {
+        val reason = pendingAutoSosReason ?: return
+        val channel = sosChannel ?: return
+
+        try {
+            channel.invokeMethod("autoSOS", mapOf("reason" to reason))
+            Log.i("MainActivity", "Dispatched AUTO_SOS to Flutter")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "Failed dispatching AUTO_SOS to Flutter: ${e.message}")
+        }
     }
 
     private fun requestCriticalPermissions() {
@@ -148,12 +200,8 @@ class MainActivity : FlutterActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-
-        if (intent.getBooleanExtra("AUTO_SOS", false)) {
-            MethodChannel(
-                flutterEngine!!.dartExecutor.binaryMessenger,
-                "sos_trigger"
-            ).invokeMethod("autoSOS", null)
-        }
+        setIntent(intent)
+        captureAutoSosFromIntent(intent)
+        dispatchPendingAutoSosIfPossible()
     }
 }

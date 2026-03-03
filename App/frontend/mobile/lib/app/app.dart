@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 
 import 'theme.dart';
 import 'theme_provider.dart';
 import 'auth_provider.dart';
 import '../screens/main_screen.dart';
+import '../screens/automatic_sos_interrupt_screen.dart';
 import '../widgets/sos_popup.dart';
+import '../services/websocket_service.dart';
 
 /// ✅ REQUIRED: global navigator key for background-triggered UI
 final GlobalKey<NavigatorState> navigatorKey =
@@ -22,6 +25,66 @@ class SafeGuardApp extends StatefulWidget {
 class _SafeGuardAppState extends State<SafeGuardApp> {
   /// 🔗 Channel used by Android (MainActivity.kt)
   static const MethodChannel _sosChannel = MethodChannel('sos_trigger');
+  StreamSubscription<Map<String, dynamic>>? _threatSub;
+  bool _autoSosDialogOpen = false;
+
+  Future<void> _clearPendingNativeAutoSos() async {
+    try {
+      await _sosChannel.invokeMethod('clearPendingAutoSOS');
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _showAutoSosInterrupt(String reason) async {
+    if (_autoSosDialogOpen) return;
+    _autoSosDialogOpen = true;
+
+    final context = navigatorKey.currentContext;
+    if (context == null) {
+      _autoSosDialogOpen = false;
+      return;
+    }
+
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => AutomaticSosInterruptScreen(
+            reason: reason,
+            onConfirmedDanger: () async {
+              final latestContext = navigatorKey.currentContext;
+              if (latestContext == null) return;
+              showDialog(
+                context: latestContext,
+                barrierDismissible: false,
+                builder: (_) => const SOSPopup(
+                  incognito: false,
+                  groupId: 'bubble',
+                  autoStart: true,
+                  automaticFlow: true,
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } finally {
+      _autoSosDialogOpen = false;
+    }
+  }
+
+  Future<void> _consumePendingNativeAutoSos() async {
+    try {
+      final pending = await _sosChannel.invokeMethod('consumePendingAutoSOS');
+      if (pending is Map) {
+        final reason = pending['reason']?.toString() ?? 'Automatic risk trigger detected';
+        unawaited(_showAutoSosInterrupt(reason));
+      }
+    } catch (_) {
+      // ignore and continue normal app startup
+    }
+  }
 
   @override
   void initState() {
@@ -32,22 +95,35 @@ class _SafeGuardAppState extends State<SafeGuardApp> {
       if (call.method == 'autoSOS') {
         debugPrint('🚨 AUTO SOS received from native layer');
 
-        final context = navigatorKey.currentContext;
-        if (context == null) {
-          debugPrint('❌ Navigator context not ready, SOS ignored');
-          return;
-        }
-
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => const SOSPopup(
-            incognito: false,
-            groupId: 'bubble',
-          ),
-        );
+        final reason = (call.arguments is Map)
+            ? (call.arguments['reason']?.toString() ?? 'Automatic risk trigger detected')
+            : 'Automatic risk trigger detected';
+        await _showAutoSosInterrupt(reason);
+        await _clearPendingNativeAutoSos();
       }
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_consumePendingNativeAutoSos());
+    });
+
+    _threatSub = WebSocketService.threatStream.listen((event) async {
+      final transcript = event['transcript']?.toString();
+      final reason = (event['reason']?.toString().isNotEmpty ?? false)
+          ? event['reason'].toString()
+          : 'Potential threat detected from real-time audio';
+      final detailReason = (transcript != null && transcript.isNotEmpty)
+          ? '$reason\nDetected text: "$transcript"'
+          : reason;
+
+      await _showAutoSosInterrupt(detailReason);
+    });
+  }
+
+  @override
+  void dispose() {
+    _threatSub?.cancel();
+    super.dispose();
   }
 
   @override

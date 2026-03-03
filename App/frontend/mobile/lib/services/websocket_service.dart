@@ -12,6 +12,10 @@ class WebSocketService {
   IOWebSocketChannel? _channel;
   StreamSubscription? _sub;
   bool _connecting = false;
+  static final StreamController<Map<String, dynamic>> _threatController =
+      StreamController<Map<String, dynamic>>.broadcast();
+
+  static Stream<Map<String, dynamic>> get threatStream => _threatController.stream;
 
   String get _wsUrl {
     final base = ApiUrls.baseUrl;
@@ -26,7 +30,20 @@ class WebSocketService {
     try {
       _channel = IOWebSocketChannel.connect(_wsUrl);
       _sub = _channel!.stream.listen((msg) {
-        // handle text responses from backend if needed
+        if (msg is String) {
+          try {
+            final data = jsonDecode(msg);
+            if (data is Map<String, dynamic>) {
+              final type = data['type']?.toString();
+              final isThreat = data['threat'] == true;
+              if (type == 'threat_detected' || (isThreat && data['auto_sos'] == true)) {
+                _threatController.add(data);
+              }
+            }
+          } catch (_) {
+            // ignore non-json text frames
+          }
+        }
       }, onDone: _onDone, onError: _onError, cancelOnError: true);
     } finally {
       _connecting = false;

@@ -1,6 +1,7 @@
 # FastAPI Framework
 fastapi==0.104.1
 uvicorn==0.24.0
+websockets==16.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
 
@@ -30,3 +31,9 @@ google-generativeai==0.8.6
 # Additional Utilities
 requests==2.31.0
 httpx==0.25.2
+
+# Local Whisper ASR
+openai-whisper
+
+# Audio Processing
+soundfile==0.12.1

@@ -2,6 +2,7 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'api_service.dart';
 
 class FirebaseNotificationService {
   static final FirebaseMessaging _firebaseMessaging = FirebaseMessaging.instance;
@@ -25,6 +26,11 @@ class FirebaseNotificationService {
     // Get token
     String? token = await _firebaseMessaging.getToken();
     print('FCM Token: $token');
+    await _registerTokenIfPossible(token);
+
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      await _registerTokenIfPossible(newToken);
+    });
 
     // Initialize local notifications
     await _initializeLocalNotifications();
@@ -83,6 +89,12 @@ class FirebaseNotificationService {
       print('Message also contained a notification: ${message.notification}');
       _showLocalNotification(message);
     }
+
+    if (message.data['type'] == 'automatic_sos_trigger') {
+      showAutomaticSosInterruptNotification(
+        reason: message.data['reason'] ?? 'Automatic risk trigger',
+      );
+    }
   }
 
   static void _handleBackgroundMessageOpened(RemoteMessage message) {
@@ -123,6 +135,48 @@ class FirebaseNotificationService {
 
   static Future<String?> getFCMToken() async {
     return await _firebaseMessaging.getToken();
+  }
+
+  static Future<void> _registerTokenIfPossible(String? token) async {
+    if (token == null || token.isEmpty) return;
+    try {
+      final user = await ApiService.getCurrentUser();
+      if (user == null) return;
+      await ApiService.registerDeviceToken(
+        userId: user.id,
+        token: token,
+      );
+    } catch (_) {
+      // Silent: app should continue even if token registration fails.
+    }
+  }
+
+  static Future<void> showAutomaticSosInterruptNotification({required String reason}) async {
+    await _flutterLocalNotificationsPlugin.show(
+      777,
+      'Automatic SOS Check',
+      reason,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'high_importance_channel',
+          'High Importance Notifications',
+          channelDescription: 'This channel is used for important notifications.',
+          importance: Importance.max,
+          priority: Priority.high,
+          fullScreenIntent: true,
+          category: AndroidNotificationCategory.alarm,
+          visibility: NotificationVisibility.public,
+          playSound: true,
+          enableVibration: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      payload: 'automatic_sos_interrupt',
+    );
   }
 
   static Future<void> subscribeToTopic(String topic) async {

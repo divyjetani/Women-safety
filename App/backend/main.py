@@ -1,7 +1,10 @@
 from fastapi import FastAPI
 from database.db import lifespan_manager
 from middleware.cors import add_cors_middleware
+from services.whisper_client import prewarm_whisper_runtime
 from utils.logger import logger
+
+prewarm_whisper_runtime()
 
 from routes import (
     auth,
@@ -19,6 +22,7 @@ from routes import (
     ai,
     websocket,
     bubble,
+    police_stations,
 )
 
 app = FastAPI(
@@ -57,6 +61,7 @@ app.include_router(groups.router)
 app.include_router(bubble.router)
 app.include_router(ai.router)
 app.include_router(websocket.router)
+app.include_router(police_stations.router)
 
 logger.info("SheSafe Backend initialized successfully")
 

@@ -166,7 +166,7 @@ class ThreatReport {
 class SOSResponse {
   final bool success;
   final String message;
-  final int reportId;
+  final String reportId;
 
   SOSResponse({
     required this.success,
@@ -178,7 +178,7 @@ class SOSResponse {
     return SOSResponse(
       success: json['success'] ?? false,
       message: json['message'] ?? '',
-      reportId: json['report_id'] ?? 0,
+      reportId: (json['report_id'] ?? '').toString(),
     );
   }
 }

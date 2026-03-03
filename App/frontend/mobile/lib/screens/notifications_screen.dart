@@ -74,6 +74,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  Color _typeColor(String type) {
+    switch (type.toLowerCase()) {
+      case 'threat':
+        return AppTheme.dangerColor;
+      case 'alert':
+        return AppTheme.warningColor;
+      default:
+        return AppTheme.infoColor;
+    }
+  }
+
+  IconData _typeIcon(String type) {
+    switch (type.toLowerCase()) {
+      case 'threat':
+        return Icons.gpp_maybe_rounded;
+      case 'alert':
+        return Icons.warning_amber_rounded;
+      default:
+        return Icons.info_outline_rounded;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final txt = Theme.of(context).textTheme;
@@ -151,6 +173,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             final body = n["body"] ?? "";
             final time = n["time"] ?? "";
             final read = n["read"] ?? false;
+            final type = (n['type'] ?? 'info').toString();
+            final cause = (n['cause'] ?? body).toString();
+            final isFromGroupMember = n['from_group_member'] == true;
+            final memberName = (n['member_name'] ?? 'Group Member').toString();
+            final memberLocation = (n['member_location'] ?? 'Location unavailable').toString();
+            final memberBattery = (n['member_battery'] ?? '--').toString();
+            final memberCameraImage = (n['member_camera_image'] ?? '').toString();
+            final hasCameraImage = memberCameraImage.trim().isNotEmpty;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -165,37 +195,208 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ),
                 ],
               ),
-              child: ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    // color: (read ? Colors.grey : Theme.of(context).primaryColor).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(
-                    read ? Icons.done_all_rounded : Icons.notifications_rounded,
-                    color: read ? Colors.grey : Theme.of(context).primaryColor,
-                  ),
-                ),
-                title: Text(title,
-                    style: txt.bodyLarge?.copyWith(fontWeight: FontWeight.w900)),
-                subtitle: Text(
-                  "$body\n$time",
-                  style: txt.bodySmall?.copyWith(
-                    color: txt.bodySmall?.color?.withValues(alpha: 0.7),
-                  ),
-                ),
-                isThreeLine: true,
-                trailing: read
-                    ? const SizedBox.shrink()
-                    : TextButton(
-                  onPressed: () => _markRead(id),
-                  child: const Text("Mark Read"),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            read ? Icons.done_all_rounded : _typeIcon(type),
+                            color: read ? Colors.grey : _typeColor(type),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                title,
+                                style: txt.bodyLarge?.copyWith(fontWeight: FontWeight.w900),
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  _metaChip(
+                                    context,
+                                    icon: Icons.schedule_rounded,
+                                    label: time.isEmpty ? 'Time unavailable' : time,
+                                  ),
+                                  _metaChip(
+                                    context,
+                                    icon: read ? Icons.mark_email_read_rounded : Icons.mark_email_unread_rounded,
+                                    label: read ? 'Read' : 'Unread',
+                                  ),
+                                  _metaChip(
+                                    context,
+                                    icon: _typeIcon(type),
+                                    label: type.toUpperCase(),
+                                    foreground: _typeColor(type),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (!read)
+                          TextButton(
+                            onPressed: () => _markRead(id),
+                            child: const Text('Mark Read'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      body,
+                      style: txt.bodyMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Cause: $cause',
+                      style: txt.bodySmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: txt.bodySmall?.color?.withValues(alpha: 0.75),
+                      ),
+                    ),
+                    if (isFromGroupMember) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).scaffoldBackgroundColor,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '$memberName details',
+                              style: txt.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _metaChip(
+                                    context,
+                                    icon: Icons.location_on_outlined,
+                                    label: memberLocation,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _metaChip(
+                                  context,
+                                  icon: Icons.battery_std_rounded,
+                                  label: 'Battery: $memberBattery%',
+                                ),
+                                _metaChip(
+                                  context,
+                                  icon: Icons.mic_rounded,
+                                  label: '10s audio clip',
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              height: 120,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Theme.of(context).cardColor,
+                                border: Border.all(
+                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
+                                ),
+                                image: hasCameraImage
+                                    ? DecorationImage(
+                                        image: NetworkImage(memberCameraImage),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                              ),
+                              child: hasCameraImage
+                                  ? null
+                                  : Center(
+                                      child: Text(
+                                        'Camera image unavailable',
+                                        style: txt.bodySmall,
+                                      ),
+                                    ),
+                            ),
+                            const SizedBox(height: 8),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton.icon(
+                                onPressed: () {
+                                  AppSnackBar.show(
+                                    context,
+                                    '10s audio preview is available in prototype mode',
+                                  );
+                                },
+                                icon: const Icon(Icons.play_arrow_rounded),
+                                label: const Text('Play 10s Audio'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             );
           }).toList(),
         ),
+      ),
+    );
+  }
+
+  Widget _metaChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    Color? foreground,
+  }) {
+    final color = foreground ?? Theme.of(context).textTheme.bodySmall?.color;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+          ),
+        ],
       ),
     );
   }

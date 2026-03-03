@@ -33,6 +33,7 @@ async def seed_database(db):
             "face_image": "",
             "aadhar_verified": True,
             "emergency_contacts": ["+1234567891", "+1234567892"],
+            "fcm_tokens": [],
             "is_premium": True,
             "stats": {"safeDays": 128, "sosUsed": 12, "checkins": 45, "guardians": 8},
             "settings": {"notifications": True, "locationSharing": True},
@@ -48,6 +49,7 @@ async def seed_database(db):
             "face_image": "",
             "aadhar_verified": False,
             "emergency_contacts": ["+1234567894"],
+            "fcm_tokens": [],
             "is_premium": False,
             "stats": {"safeDays": 74, "sosUsed": 0, "checkins": 14, "guardians": 3},
             "settings": {"notifications": True, "locationSharing": False},
@@ -63,6 +65,7 @@ async def seed_database(db):
             "face_image": "",
             "aadhar_verified": True,
             "emergency_contacts": [],
+            "fcm_tokens": [],
             "is_premium": False,
             "stats": {"safeDays": 33, "sosUsed": 1, "checkins": 8, "guardians": 2},
             "settings": {"notifications": False, "locationSharing": True},
@@ -111,9 +114,35 @@ async def seed_database(db):
         await history_col.insert_one({
             "user_id": 1,
             "history": [
-                {"id": 1, "title": "SOS Activated", "desc": "SOS triggered from Connaught Place.", "time": "Today 9:12 PM"},
-                {"id": 2, "title": "Location Shared", "desc": "Shared location with Guardians.", "time": "Today 4:01 PM"},
-                {"id": 3, "title": "Check-in", "desc": "User checked-in as safe.", "time": "Yesterday 8:20 PM"},
+                {
+                    "id": "sos-seed-1",
+                    "type": "sos",
+                    "title": "SOS Activated",
+                    "desc": "SOS triggered from Connaught Place.",
+                    "time": "Today 9:12 PM",
+                    "status": "active",
+                    "resolved": False,
+                    "trigger_type": "manual",
+                    "trigger_reason": "Manual trigger from app",
+                },
+                {
+                    "id": "history-2",
+                    "type": "location",
+                    "title": "Location Shared",
+                    "desc": "Shared location with Guardians.",
+                    "time": "Today 4:01 PM",
+                    "status": "completed",
+                    "resolved": True,
+                },
+                {
+                    "id": "history-3",
+                    "type": "checkin",
+                    "title": "Check-in",
+                    "desc": "User checked-in as safe.",
+                    "time": "Yesterday 8:20 PM",
+                    "status": "completed",
+                    "resolved": True,
+                },
             ]
         })
 
@@ -207,6 +236,116 @@ async def seed_database(db):
             },
         ])
 
+    police_stations_col = db["police_stations"]
+    if await police_stations_col.count_documents({}) == 0:
+        await police_stations_col.insert_many([
+            {
+                "id": 1,
+                "name": "Navrangpura Police Station",
+                "address": "Zone-1, Near Bus Stop, Navrangpura",
+                "lat": 23.0400,
+                "lng": 72.5700,
+            },
+            {
+                "id": 2,
+                "name": "Vastrapur Police Station",
+                "address": "Near SAL Hospital, Thaltej Road, Vastrapur",
+                "lat": 23.0360,
+                "lng": 72.5294,
+            },
+            {
+                "id": 3,
+                "name": "Satellite Police Station",
+                "address": "Ramdevnagar Cross Road, Satellite",
+                "lat": 23.0332,
+                "lng": 72.5168,
+            },
+            {
+                "id": 4,
+                "name": "Maninagar Police Station",
+                "address": "Krishna Baug Cross Road, Maninagar",
+                "lat": 23.0000,
+                "lng": 72.6000,
+            },
+            {
+                "id": 5,
+                "name": "Sabarmati Police Station",
+                "address": "Near Rural Bus Stand, Sabarmati",
+                "lat": 23.0833,
+                "lng": 72.5833,
+            },
+            {
+                "id": 6,
+                "name": "Ghatlodiya Police Station",
+                "address": "Behind Chandni Apartment, Sola Road",
+                "lat": 23.0690,
+                "lng": 72.5393,
+            },
+            {
+                "id": 7,
+                "name": "Odhav Police Station",
+                "address": "Near Adinath Nagar, Odhav GIDC",
+                "lat": 23.0322,
+                "lng": 72.6753,
+            },
+            {
+                "id": 8,
+                "name": "Bapunagar Police Station",
+                "address": "Lal Bahadur Shastri Road, Bapunagar",
+                "lat": 23.0404,
+                "lng": 72.6283,
+            },
+            {
+                "id": 9,
+                "name": "Rakhiyal Police Station",
+                "address": "Near Monogram Mill, Rakhiyal",
+                "lat": 23.0200,
+                "lng": 72.6299,
+            },
+            {
+                "id": 10,
+                "name": "Isanpur Police Station",
+                "address": "Bhairavnath Isanpur Road, Isanpur",
+                "lat": 22.9766,
+                "lng": 72.5972,
+            },
+            {
+                "id": 11,
+                "name": "Dariyapur Police Station",
+                "address": "Dariyapur Tower Road, Dariyapur",
+                "lat": 23.0436,
+                "lng": 72.5826,
+            },
+            {
+                "id": 12,
+                "name": "Karanj Police Station",
+                "address": "Karanj Bhavan, Bhadra",
+                "lat": 23.0238,
+                "lng": 72.5828,
+            },
+            {
+                "id": 13,
+                "name": "Sola Police Station",
+                "address": "Near Sola Civil Hospital, Sola",
+                "lat": 23.0810,
+                "lng": 72.5350,
+            },
+            {
+                "id": 14,
+                "name": "Shahibaug Police Station",
+                "address": "Near Shahibaug Under Bridge, Shahibaug",
+                "lat": 23.0580,
+                "lng": 72.5930,
+            },
+            {
+                "id": 15,
+                "name": "Ellisbridge Police Station",
+                "address": "Vashram Road, Ellisbridge",
+                "lat": 23.0245,
+                "lng": 72.5735,
+            },
+        ])
+
 
 async def run_seed():
     db = await connect_db()
@@ -222,6 +361,7 @@ async def run_seed():
         "home_activity",
         "quick_actions",
         "threat_reports",
+        "police_stations",
     ]
     counts = {}
     for collection_name in collections_to_check:
