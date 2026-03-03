@@ -8,11 +8,17 @@ import 'app_snackbar.dart';
 class BubbleInfoSheet extends StatefulWidget {
   final SafetyGroup? group;
   final Function(LatLng)? onNavigateToMember;
+  final Future<void> Function()? onDeleteBubble;
+  final Future<void> Function()? onLeaveBubble;
+  final Future<void> Function(GroupMember member)? onKickMember;
 
   const BubbleInfoSheet({
     super.key,
     required this.group,
     this.onNavigateToMember,
+    this.onDeleteBubble,
+    this.onLeaveBubble,
+    this.onKickMember,
   });
 
   @override
@@ -49,6 +55,8 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
         child: const Center(child: Text('No group selected')),
       );
     }
+
+    final isCreator = _currentUserId != null && widget.group!.adminId == _currentUserId;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -113,6 +121,8 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
             final isMe = _currentUserId != null && m.id == _currentUserId.toString();
             final displayName = isMe ? "me (${m.name})" : m.name;
             final hasLocation = m.lat != 0.0 && m.lng != 0.0;
+            final memberId = int.tryParse(m.id);
+            final canKick = isCreator && !isMe && memberId != null && widget.onKickMember != null;
             
             return ListTile(
               leading: CircleAvatar(
@@ -142,6 +152,49 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (canKick)
+                    IconButton(
+                      tooltip: 'Kick member',
+                      onPressed: () async {
+                        final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Kick member?'),
+                                content: Text('Remove ${m.name} from this bubble?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => Navigator.pop(context, true),
+                                    child: const Text('Kick'),
+                                  ),
+                                ],
+                              ),
+                            ) ??
+                            false;
+                        if (!confirm) return;
+
+                        try {
+                          await widget.onKickMember?.call(m);
+                          if (!mounted) return;
+                          AppSnackBar.show(
+                            context,
+                            '${m.name} removed from bubble',
+                            type: AppSnackBarType.success,
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          AppSnackBar.show(
+                            context,
+                            e.toString().replaceAll('Exception:', '').trim(),
+                            type: AppSnackBarType.error,
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.person_remove_rounded),
+                    ),
                   Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -162,6 +215,64 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
                   : null,
             );
           }),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () async {
+                final isDelete = isCreator;
+                final actionText = isDelete ? 'delete this bubble' : 'leave this bubble';
+                final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: Text(isDelete ? 'Delete Bubble?' : 'Leave Bubble?'),
+                        content: Text('Are you sure you want to $actionText?'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('Cancel'),
+                          ),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: Text(isDelete ? 'Delete' : 'Leave'),
+                          ),
+                        ],
+                      ),
+                    ) ??
+                    false;
+                if (!confirmed) return;
+
+                try {
+                  if (isDelete) {
+                    await widget.onDeleteBubble?.call();
+                  } else {
+                    await widget.onLeaveBubble?.call();
+                  }
+                  if (!mounted) return;
+                  Navigator.pop(context);
+                  AppSnackBar.show(
+                    context,
+                    isDelete ? 'Bubble deleted' : 'You left the bubble',
+                    type: AppSnackBarType.success,
+                  );
+                } catch (e) {
+                  if (!mounted) return;
+                  AppSnackBar.show(
+                    context,
+                    e.toString().replaceAll('Exception:', '').trim(),
+                    type: AppSnackBarType.error,
+                  );
+                }
+              },
+              icon: Icon(isCreator ? Icons.delete_forever_rounded : Icons.logout_rounded),
+              label: Text(isCreator ? 'Delete Bubble' : 'Leave Bubble'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isCreator ? Colors.red : null,
+                foregroundColor: isCreator ? Colors.white : null,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
         ],
       ),
     );

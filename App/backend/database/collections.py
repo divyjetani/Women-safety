@@ -21,6 +21,9 @@ def get_collections():
         "groups": db["groups"],
         "shares": db["shares"],
         "sos_events": db["sos_events"],
+        "sos_auto_pending": db["sos_auto_pending"],
+        "audio_session_analytics": db["audio_session_analytics"],
+        "ai_suggestions": db["ai_suggestions"],
         "police_stations": db["police_stations"],
     }
     

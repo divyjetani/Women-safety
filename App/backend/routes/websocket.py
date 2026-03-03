@@ -2,6 +2,8 @@ import json
 import struct
 import asyncio
 import time
+from datetime import datetime
+from uuid import uuid4
 from pathlib import Path
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from utils.logger import logger
@@ -92,6 +94,17 @@ async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     logger.info("🟢 Client connected to audio WS")
 
+    collections = get_collections()
+    audio_analytics_col = collections["audio_session_analytics"]
+    session_id = str(uuid4())
+    query_user_id = ws.query_params.get("user_id")
+    session_user_id = None
+    if query_user_id and str(query_user_id).isdigit():
+        session_user_id = int(query_user_id)
+
+    session_started_at = datetime.utcnow().isoformat()
+    confidence_samples: list[float] = []
+
     audio_buffer: list = []
     buffer_lock = asyncio.Lock()
     threat_score = 0
@@ -118,6 +131,7 @@ async def websocket_endpoint(ws: WebSocket):
         prediction = text_classifier.predict(transcript)
         is_threat = prediction.get("is_threat", False)
         confidence = float(prediction.get("confidence", 0.0))
+        confidence_samples.append(confidence)
 
         logger.info(
             f"📝 Transcript: {transcript[:120]} | threat={is_threat} | confidence={confidence:.2f}"
@@ -255,6 +269,26 @@ async def websocket_endpoint(ws: WebSocket):
                     _prune_audio_chunks()
                     logger.info(f"💾 Final flush saved | duration={duration:.2f}s")
 
+        avg_confidence = round(sum(confidence_samples) / len(confidence_samples), 4) if confidence_samples else 0.0
+        max_confidence = round(max(confidence_samples), 4) if confidence_samples else 0.0
+        min_confidence = round(min(confidence_samples), 4) if confidence_samples else 0.0
+
+        try:
+            await audio_analytics_col.insert_one(
+                {
+                    "id": session_id,
+                    "user_id": session_user_id,
+                    "opened_at": session_started_at,
+                    "closed_at": datetime.utcnow().isoformat(),
+                    "sample_count": len(confidence_samples),
+                    "avg_audio_score": avg_confidence,
+                    "max_audio_score": max_confidence,
+                    "min_audio_score": min_confidence,
+                }
+            )
+        except Exception as exc:
+            logger.warning(f"⚠️ Failed to persist audio session analytics: {exc}")
+
         logger.info("🛑 WS connection fully closed")
 
 
@@ -271,6 +305,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
         # Get bubble info from database
         collections = get_collections()
         bubbles_col = collections["bubbles"]
+        users_col = collections["users"]
         bubble = await bubbles_col.find_one({"code": bubble_code})
         
         if not bubble:
@@ -278,13 +313,45 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
             await ws.close()
             return
         
+        async def _hydrate_members(members: list[dict]) -> list[dict]:
+            hydrated: list[dict] = []
+            changed = False
+
+            for member in members:
+                member_doc = dict(member)
+                member_user_id = member_doc.get("user_id")
+                if isinstance(member_user_id, int):
+                    user_doc = await users_col.find_one(
+                        {"id": member_user_id},
+                        {"_id": 0, "username": 1, "email": 1},
+                    )
+                    if user_doc:
+                        username = str(user_doc.get("username", "")).strip()
+                        if not username:
+                            email = str(user_doc.get("email", "")).strip()
+                            username = email.split("@")[0] if email else ""
+                        if username and username != str(member_doc.get("name", "")).strip():
+                            member_doc["name"] = username
+                            changed = True
+                hydrated.append(member_doc)
+
+            if changed:
+                await bubbles_col.update_one(
+                    {"code": bubble_code},
+                    {"$set": {"members": hydrated}},
+                )
+
+            return hydrated
+
+        hydrated_members = await _hydrate_members(bubble.get("members", []))
+
         # Send initial bubble members info
         await ws.send_json({
             "type": "bubble_info",
             "bubble": {
                 "code": bubble_code,
                 "name": bubble.get("name"),
-                "members": bubble.get("members", [])
+                "members": hydrated_members
             }
         })
         
@@ -307,6 +374,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
                 
                 # Get updated bubble
                 updated_bubble = await bubbles_col.find_one({"code": bubble_code})
+                hydrated_members = await _hydrate_members(updated_bubble.get("members", []))
                 
                 # Broadcast to all members
                 await manager.broadcast_location(bubble_code, {
@@ -314,7 +382,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
                     "lat": data.get("lat"),
                     "lng": data.get("lng"),
                     "battery": data.get("battery"),
-                    "members": updated_bubble.get("members", [])
+                    "members": hydrated_members
                 })
                 
                 # Removed verbose logging - too noisy with 5-second updates

@@ -13,3 +13,12 @@ class AskAIResponse(BaseModel):
     short_answer: str = ""
     detailed_answer: str = ""
     tips: List[str] = []
+
+
+class GenerateSuggestionsRequest(BaseModel):
+    user_id: int
+
+
+class SuggestionsResponse(BaseModel):
+    success: bool
+    suggestions: List[dict] = []

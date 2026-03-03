@@ -108,3 +108,82 @@ Rules:
             return ["Stay in well-lit areas", "Avoid shortcuts", "Keep phone charged"]
         else:
             return ["Stay alert", "Share location", "Trust your instincts"]
+
+    async def generate_safety_suggestions(self, context_payload: dict) -> dict:
+        try:
+            if not GEMINI_API_KEY:
+                return {
+                    "success": True,
+                    "suggestions": [
+                        {
+                            "title": "Keep emergency contacts updated",
+                            "body": "Review emergency contacts and keep at least two reachable guardians.",
+                        },
+                        {
+                            "title": "Use safer commute windows",
+                            "body": "Prefer well-lit routes and avoid late-night isolated zones when possible.",
+                        },
+                    ],
+                }
+
+            if not self.model:
+                return {
+                    "success": False,
+                    "error": "Gemini API model not initialized",
+                }
+
+            prompt = f"""
+You are an AI safety assistant for a women safety app.
+Given this user context JSON, generate exactly 3 concise safety recommendations.
+
+User context:
+{context_payload}
+
+Output format must be strict JSON array only:
+[
+  {{"title": "short title", "body": "1-2 line actionable suggestion"}}
+]
+"""
+
+            response = self.model.generate_content(prompt)
+            text = (response.text or "").strip()
+
+            import json
+
+            if text.startswith("```"):
+                text = text.strip("`")
+                if text.lower().startswith("json"):
+                    text = text[4:].strip()
+
+            suggestions = json.loads(text)
+            if not isinstance(suggestions, list):
+                raise ValueError("Suggestions output is not a list")
+
+            normalized = []
+            for item in suggestions[:3]:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("title", "Suggestion")).strip()
+                body = str(item.get("body", "")).strip()
+                if not body:
+                    continue
+                normalized.append({"title": title or "Suggestion", "body": body})
+
+            if not normalized:
+                normalized = [
+                    {
+                        "title": "Stay connected",
+                        "body": "Enable quick check-ins and keep location sharing on during risky hours.",
+                    }
+                ]
+
+            return {
+                "success": True,
+                "suggestions": normalized,
+            }
+        except Exception as e:
+            logger.error(f"AI suggestion generation error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+            }

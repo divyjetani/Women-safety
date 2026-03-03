@@ -17,18 +17,20 @@ class WebSocketService {
 
   static Stream<Map<String, dynamic>> get threatStream => _threatController.stream;
 
-  String get _wsUrl {
+  String _wsUrl({int? userId}) {
     final base = ApiUrls.baseUrl;
-    if (base.startsWith('https://')) return base.replaceFirst('https://', 'wss://') + '/ws';
-    if (base.startsWith('http://')) return base.replaceFirst('http://', 'ws://') + '/ws';
-    return base + '/ws';
+    final wsBase = base.startsWith('https://')
+        ? base.replaceFirst('https://', 'wss://')
+        : (base.startsWith('http://') ? base.replaceFirst('http://', 'ws://') : base);
+    final query = (userId != null && userId > 0) ? '?user_id=$userId' : '';
+    return '$wsBase/ws$query';
   }
 
-  Future<void> connect() async {
+  Future<void> connect([int? userId]) async {
     if (_channel != null || _connecting) return;
     _connecting = true;
     try {
-      _channel = IOWebSocketChannel.connect(_wsUrl);
+      _channel = IOWebSocketChannel.connect(_wsUrl(userId: userId));
       _sub = _channel!.stream.listen((msg) {
         if (msg is String) {
           try {

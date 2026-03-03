@@ -126,6 +126,7 @@ class SafetyGroup {
   final List<GroupMember> members;
   final int? icon;
   final int? color;
+  final int? adminId;
   final String? code;  // Add code field
 
   SafetyGroup({
@@ -134,6 +135,7 @@ class SafetyGroup {
     required this.members,
     this.icon,
     this.color,
+    this.adminId,
     this.code,
   });
 
@@ -144,6 +146,7 @@ class SafetyGroup {
     "members": members.map((m) => m.toJson()).toList(),
     if (icon != null) "icon": icon,
     if (color != null) "color": color,
+    if (adminId != null) "admin_id": adminId,
     if (code != null) "code": code,
   };
 
@@ -156,6 +159,7 @@ class SafetyGroup {
           .toList(),
       icon: json["icon"],
       color: json["color"],
+      adminId: (json["admin_id"] as num?)?.toInt(),
       code: json["code"],
     );
   }

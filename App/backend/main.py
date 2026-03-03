@@ -1,8 +1,10 @@
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from database.db import lifespan_manager
 from middleware.cors import add_cors_middleware
 from services.whisper_client import prewarm_whisper_runtime
 from utils.logger import logger
+from utils.profile_image import PROFILE_PICS_DIR
 
 prewarm_whisper_runtime()
 
@@ -34,6 +36,9 @@ app = FastAPI(
 
 # cors middleware
 add_cors_middleware(app)
+
+# static files for stored profile images
+app.mount("/profile_pics", StaticFiles(directory=str(PROFILE_PICS_DIR)), name="profile_pics")
 
 # api health check
 @app.get("/", tags=["health"])

@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -144,7 +146,20 @@ class MainActivity : FlutterActivity() {
             val reason = intent.getStringExtra("AUTO_SOS_REASON")
                 ?: "Automatic risk trigger detected"
             pendingAutoSosReason = reason
+            triggerAutoSosVibration()
             Log.i("MainActivity", "Queued AUTO_SOS intent | reason=$reason")
+        }
+    }
+
+    private fun triggerAutoSosVibration() {
+        val vibrator = getSystemService(VIBRATOR_SERVICE) as? Vibrator ?: return
+        if (!vibrator.hasVibrator()) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 400, 180, 400, 180, 400), -1))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(longArrayOf(0, 400, 180, 400, 180, 400), -1)
         }
     }
 

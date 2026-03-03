@@ -10,6 +10,7 @@ import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import android.content.Context.MODE_PRIVATE
 
 object SafetySocket {
 
@@ -59,8 +60,16 @@ object SafetySocket {
 
         Log.i("SafetySocket", "🔧 Opening WebSocket")
 
+        val prefs = appContext?.getSharedPreferences("bubble_app", MODE_PRIVATE)
+        val userId = prefs?.getInt("user_id", -1) ?: -1
+        val wsUrl = if (userId > 0) {
+            "ws://10.101.4.13:8000/ws?user_id=$userId"
+        } else {
+            "ws://10.101.4.13:8000/ws"
+        }
+
         val request = Request.Builder()
-            .url("ws://10.189.91.13:8000/ws")
+            .url(wsUrl)
             .build()
 
         socket = client!!.newWebSocket(request, object : WebSocketListener() {

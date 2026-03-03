@@ -15,6 +15,8 @@ class NotificationsScreen extends StatefulWidget {
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
+  static final Map<int, List<Map<String, dynamic>>> _sessionNotificationsByUser = {};
+
   bool loading = true;
   String? errorMessage;
   List<Map<String, dynamic>> notifications = [];
@@ -25,7 +27,46 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     _load();
   }
 
-  Future<void> _load() async {
+  DateTime? _parseNotificationTime(Map<String, dynamic> notification) {
+    final createdAt = notification['created_at']?.toString();
+    if (createdAt != null && createdAt.trim().isNotEmpty) {
+      final parsed = DateTime.tryParse(createdAt);
+      if (parsed != null) return parsed.toUtc();
+    }
+
+    final timestamp = notification['timestamp'];
+    if (timestamp is num) {
+      final millis = timestamp > 9999999999 ? timestamp.toInt() : (timestamp * 1000).toInt();
+      return DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+    }
+
+    final timeText = notification['time']?.toString();
+    if (timeText != null && timeText.trim().isNotEmpty) {
+      final parsed = DateTime.tryParse(timeText);
+      if (parsed != null) return parsed.toUtc();
+    }
+
+    return null;
+  }
+
+  void _sortNotificationsLatestFirst(List<Map<String, dynamic>> items) {
+    items.sort((a, b) {
+      final bTime = _parseNotificationTime(b);
+      final aTime = _parseNotificationTime(a);
+
+      if (bTime != null && aTime != null) {
+        return bTime.compareTo(aTime);
+      }
+      if (bTime != null) return -1;
+      if (aTime != null) return 1;
+
+      final bId = (b['id'] as num?)?.toInt() ?? -1;
+      final aId = (a['id'] as num?)?.toInt() ?? -1;
+      return bId.compareTo(aId);
+    });
+  }
+
+  Future<void> _load({bool forceRefresh = false}) async {
     try {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       if (user == null) {
@@ -36,15 +77,28 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         return;
       }
 
+      final cached = _sessionNotificationsByUser[user.id];
+      if (!forceRefresh && cached != null) {
+        setState(() {
+          notifications = List<Map<String, dynamic>>.from(cached);
+          loading = false;
+          errorMessage = null;
+        });
+        return;
+      }
+
       setState(() {
         loading = true;
         errorMessage = null;
       });
 
       final data = await ApiService.getNotifications(user.id);
+      final parsed = data.map((e) => Map<String, dynamic>.from(e)).toList();
+  _sortNotificationsLatestFirst(parsed);
+      _sessionNotificationsByUser[user.id] = List<Map<String, dynamic>>.from(parsed);
 
       setState(() {
-        notifications = data.map((e) => Map<String, dynamic>.from(e)).toList();
+        notifications = parsed;
         loading = false;
       });
     } catch (e) {
@@ -64,7 +118,47 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       }
 
       await ApiService.markNotificationRead(userId: user.id, notificationId: notificationId);
-      _load();
+      _load(forceRefresh: true);
+    } catch (e) {
+      AppSnackBar.show(
+        context,
+        e.toString().replaceAll("Exception:", "").trim(),
+        type: AppSnackBarType.error,
+      );
+    }
+  }
+
+  Future<void> _deleteNotification(int notificationId) async {
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Delete notification?'),
+            content: const Text('This notification will be removed permanently.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirm) return;
+
+    try {
+      final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+      if (user == null) {
+        AppSnackBar.show(context, 'Please login again to delete notifications', type: AppSnackBarType.warning);
+        return;
+      }
+
+      await ApiService.deleteNotification(userId: user.id, notificationId: notificationId);
+      _load(forceRefresh: true);
     } catch (e) {
       AppSnackBar.show(
         context,
@@ -108,7 +202,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         backgroundColor: Colors.transparent,
       ),
       body: RefreshIndicator(
-        onRefresh: _load,
+        onRefresh: () => _load(forceRefresh: true),
         child: loading
             ? ListView(
           padding: const EdgeInsets.all(16),
@@ -248,12 +342,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             ],
                           ),
                         ),
-                        if (!read)
-                          TextButton(
-                            onPressed: () => _markRead(id),
-                            child: const Text('Mark Read'),
-                          ),
                       ],
+                    ),
+                    if (!read)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => _markRead(id),
+                          child: const Text('Mark Read'),
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _deleteNotification(id),
+                        icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                        label: const Text('Delete'),
+                        style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                      ),
                     ),
                     const SizedBox(height: 10),
                     Text(

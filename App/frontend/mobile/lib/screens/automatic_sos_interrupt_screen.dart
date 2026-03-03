@@ -1,8 +1,21 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+import 'dart:ui' as ui;
 
+import 'package:battery_plus/battery_plus.dart';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:provider/provider.dart';
+
+import '../app/auth_provider.dart';
+import '../services/api_service.dart';
+import '../services/group_storage.dart';
+import '../widgets/app_snackbar.dart';
 
 class AutomaticSosInterruptScreen extends StatefulWidget {
   final String reason;
@@ -19,15 +32,24 @@ class AutomaticSosInterruptScreen extends StatefulWidget {
 }
 
 class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScreen> {
-  static const int _initialCountdownSeconds = 8;
+  static const int _initialCountdownSeconds = 13;
+  static const int _statusPollSeconds = 1;
+
   final LocalAuthentication _localAuth = LocalAuthentication();
 
   bool _flashOn = true;
   bool _checkingStop = false;
-  bool _sosTriggered = false;
+  bool _isStartingPending = false;
+  bool _isCompleted = false;
+  bool _hasSentAlert = false;
+  String _verificationStatus = '';
+
   int _secondsLeft = _initialCountdownSeconds;
+  String? _pendingId;
+
   Timer? _flashTimer;
   Timer? _countdownTimer;
+  Timer? _statusPollTimer;
 
   Future<bool> _authenticateToCancel() async {
     final isSupported = await _localAuth.isDeviceSupported();
@@ -50,7 +72,88 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
   @override
   void initState() {
     super.initState();
-    _startFlashCountdown();
+    _beginAutomaticPendingFlow();
+  }
+
+  Future<void> _beginAutomaticPendingFlow() async {
+    if (_isStartingPending) return;
+    _isStartingPending = true;
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+      if (user == null) {
+        throw Exception('User not logged in');
+      }
+
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+          ),
+        );
+      } catch (_) {
+        position = null;
+      }
+
+      int? battery;
+      try {
+        battery = await Battery().batteryLevel;
+      } catch (_) {
+        battery = null;
+      }
+
+      final groups = await GroupStorage.loadGroups();
+      final selected = await GroupStorage.loadSelectedGroup();
+      String? selectedBubbleCode;
+      if (selected != null) {
+        final matched = groups.where((g) => g.id == selected).toList();
+        if (matched.isNotEmpty) {
+          selectedBubbleCode = matched.first.code ?? matched.first.id;
+        }
+      }
+
+      final locationText = (position == null)
+          ? 'Unknown location'
+          : '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
+
+      final startResp = await ApiService.startAutomaticSosPending(
+        userId: user.id,
+        reason: widget.reason,
+        location: locationText,
+        lat: position?.latitude,
+        lng: position?.longitude,
+        battery: battery,
+        bubbleCode: selectedBubbleCode,
+        cameraFrontImage: user.faceImage,
+        cameraBackImage: user.faceImage,
+        audio10sUrl: '',
+        message: 'Automatic SOS triggered. Reason: ${widget.reason}',
+      );
+
+      final pendingId = startResp['pending_id']?.toString();
+      if (!mounted || pendingId == null || pendingId.isEmpty) return;
+
+      final seconds = (startResp['seconds_remaining'] as num?)?.toInt() ?? _initialCountdownSeconds;
+      setState(() {
+        _pendingId = pendingId;
+        _secondsLeft = seconds;
+      });
+
+      _startFlashCountdown();
+      _startStatusPolling();
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Failed to start automatic SOS countdown.',
+        type: AppSnackBarType.error,
+      );
+      Navigator.of(context).pop();
+    } finally {
+      _isStartingPending = false;
+    }
   }
 
   void _startFlashCountdown() {
@@ -60,102 +163,267 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
     HapticFeedback.vibrate();
 
     _flashTimer = Timer.periodic(const Duration(milliseconds: 250), (_) {
-      if (!mounted) return;
+      if (!mounted || _isCompleted) return;
       setState(() => _flashOn = !_flashOn);
     });
 
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) async {
-      if (!mounted) return;
-      if (_checkingStop || _sosTriggered) return;
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted || _checkingStop || _isCompleted) return;
 
       if (_secondsLeft > 1) {
         setState(() => _secondsLeft -= 1);
         HapticFeedback.heavyImpact();
-        return;
-      }
-
-      if (_secondsLeft <= 1) {
-        if (!_sosTriggered) {
-          setState(() => _secondsLeft = 0);
-        }
+      } else {
+        setState(() => _secondsLeft = 0);
         timer.cancel();
-        await _triggerSosNow();
+        _onCountdownZero();
       }
     });
   }
 
-  Future<void> _triggerSosNow() async {
-    if (_sosTriggered) return;
-    _sosTriggered = true;
+  void _startStatusPolling() {
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(const Duration(seconds: _statusPollSeconds), (_) {
+      _pollAutomaticStatus();
+    });
+  }
 
+  Future<void> _pollAutomaticStatus() async {
+    final pendingId = _pendingId;
+    if (pendingId == null || _isCompleted) return;
+
+    try {
+      final statusResp = await ApiService.getAutomaticSosStatus(pendingId: pendingId);
+      if (!mounted) return;
+
+      final status = statusResp['status']?.toString() ?? 'pending';
+      final remaining = (statusResp['seconds_remaining'] as num?)?.toInt() ?? 0;
+
+      if (status == 'pending') {
+        setState(() {
+          _secondsLeft = remaining;
+        });
+        return;
+      }
+
+      if (status == 'sent') {
+        await _showAlertSentAndClose();
+        return;
+      }
+
+      if (status == 'cancelled') {
+        _flashTimer?.cancel();
+        _countdownTimer?.cancel();
+        _statusPollTimer?.cancel();
+        _isCompleted = true;
+        if (mounted) Navigator.of(context).pop();
+      }
+    } catch (_) {
+      // best-effort polling only
+    }
+  }
+
+  void _onCountdownZero() {
+    if (_isCompleted) return;
     _flashTimer?.cancel();
     _countdownTimer?.cancel();
     if (!mounted) return;
+    setState(() => _flashOn = true);
+  }
+
+  Future<void> _showAlertSentAndClose() async {
+    if (_isCompleted || _hasSentAlert) return;
+    _isCompleted = true;
+    _hasSentAlert = true;
+
+    _flashTimer?.cancel();
+    _countdownTimer?.cancel();
+    _statusPollTimer?.cancel();
+
+    if (!mounted) return;
+    setState(() {
+      _flashOn = true;
+      _secondsLeft = 0;
+    });
 
     try {
       await widget.onConfirmedDanger();
     } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to open SOS flow. Retrying is recommended.')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
+      // backend already marks as sent
+    }
+
+    if (!mounted) return;
+    AppSnackBar.show(
+      context,
+      'Alert has been sent.',
+      type: AppSnackBarType.success,
+    );
+
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (mounted) {
+      Navigator.of(context).pop();
     }
   }
 
   Future<void> _stopAndVerify() async {
-    if (_checkingStop || _sosTriggered) return;
-    setState(() => _checkingStop = true);
+    if (_checkingStop || _isCompleted) return;
+    setState(() {
+      _checkingStop = true;
+      _verificationStatus = 'Capturing selfie for face verification...';
+    });
 
     _flashTimer?.cancel();
     _countdownTimer?.cancel();
 
     try {
-      final faceVerified = await _mockFaceVerification();
-      if (faceVerified) {
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        return;
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.currentUser;
+      if (user == null) {
+        throw Exception('User not logged in');
       }
 
-      final authenticated = await _authenticateToCancel();
+      final selfieVerified = await _verifyWithSelfie(user.faceImage);
 
+      setState(() {
+        _verificationStatus = 'Use fingerprint/device lock to confirm cancel...';
+      });
+      final authenticated = await _authenticateToCancel();
       if (!mounted) return;
 
-      if (authenticated) {
+      if (selfieVerified && authenticated) {
+        await _cancelPendingSos();
+        if (!mounted) return;
         Navigator.of(context).pop();
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verification failed. SOS will continue.')),
+        AppSnackBar.show(
+          context,
+          'Face or fingerprint verification failed. SOS will continue.',
+          type: AppSnackBarType.warning,
         );
       }
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Authentication error. SOS countdown resumed.')),
+      AppSnackBar.show(
+        context,
+        'Authentication error. SOS countdown resumed.',
+        type: AppSnackBarType.error,
       );
     } finally {
-      if (!mounted) return;
-      setState(() => _checkingStop = false);
-      if (!_sosTriggered && _secondsLeft > 0) {
-        _startFlashCountdown();
+      if (mounted) {
+        setState(() {
+          _checkingStop = false;
+          _verificationStatus = '';
+        });
+        if (!_isCompleted && _secondsLeft > 0) {
+          _startFlashCountdown();
+        }
       }
     }
   }
 
-  Future<bool> _mockFaceVerification() async {
-    await Future.delayed(const Duration(milliseconds: 900));
-    return false;
+  Future<void> _cancelPendingSos() async {
+    final pendingId = _pendingId;
+    if (pendingId == null) return;
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.currentUser;
+    if (user == null) return;
+
+    _statusPollTimer?.cancel();
+    await ApiService.cancelAutomaticSos(
+      pendingId: pendingId,
+      userId: user.id,
+      reason: 'Cancelled by user after authentication',
+    );
+  }
+
+  Future<bool> _verifyWithSelfie(String profileImageBase64) async {
+    XFile? selfie;
+    CameraController? controller;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return false;
+
+      final frontCamera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      controller = CameraController(
+        frontCamera,
+        ResolutionPreset.low,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+
+      await controller.initialize();
+      await controller.setFlashMode(FlashMode.off);
+      selfie = await controller.takePicture();
+    } catch (_) {
+      return false;
+    } finally {
+      await controller?.dispose();
+    }
+
+    if (selfie == null) return false;
+
+    if (profileImageBase64.trim().isEmpty) {
+      return true;
+    }
+
+    try {
+      final profileBytes = base64Decode(profileImageBase64);
+      final selfieBytes = await File(selfie.path).readAsBytes();
+
+      final score = await _histogramSimilarity(profileBytes, selfieBytes);
+      return score >= 0.80;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<double>> _extractHistogram(Uint8List bytes) async {
+    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 64, targetHeight: 64);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (byteData == null) return List.filled(16, 0);
+
+    final data = byteData.buffer.asUint8List();
+    final bins = List<double>.filled(16, 0);
+
+    for (int i = 0; i + 3 < data.length; i += 4) {
+      final r = data[i].toDouble();
+      final g = data[i + 1].toDouble();
+      final b = data[i + 2].toDouble();
+      final lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+      final bin = min(15, max(0, (lum * 15).round()));
+      bins[bin] += 1;
+    }
+
+    final sum = bins.fold<double>(0, (a, v) => a + v);
+    if (sum <= 0) return bins;
+    return bins.map((v) => v / sum).toList();
+  }
+
+  Future<double> _histogramSimilarity(Uint8List aBytes, Uint8List bBytes) async {
+    final h1 = await _extractHistogram(aBytes);
+    final h2 = await _extractHistogram(bBytes);
+
+    double diff = 0;
+    for (int i = 0; i < h1.length; i++) {
+      diff += (h1[i] - h2[i]).abs();
+    }
+
+    final double normalizedDiff = (diff / 2).clamp(0.0, 1.0).toDouble();
+    return 1.0 - normalizedDiff;
   }
 
   @override
   void dispose() {
     _flashTimer?.cancel();
     _countdownTimer?.cancel();
+    _statusPollTimer?.cancel();
     super.dispose();
   }
 
@@ -203,7 +471,9 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
                 ),
                 const SizedBox(height: 20),
                 Text(
-                  'Tap STOP and verify face or device lock to cancel.',
+                  _secondsLeft == 0
+                      ? 'Alert has been sent.'
+                      : 'Tap STOP and verify face or device lock to cancel.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: fg,
@@ -211,9 +481,21 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (_checkingStop && _verificationStatus.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _verificationStatus,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 26),
                 ElevatedButton.icon(
-                  onPressed: _checkingStop ? null : _stopAndVerify,
+                  onPressed: (_checkingStop || _secondsLeft == 0) ? null : _stopAndVerify,
                   icon: const Icon(Icons.stop_circle_outlined),
                   label: Text(_checkingStop ? 'Verifying...' : 'STOP'),
                   style: ElevatedButton.styleFrom(

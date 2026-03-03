@@ -92,7 +92,7 @@ class SafetyStats {
 }
 
 class RecentActivity {
-  final int id;
+  final String id;
   final String type;
   final String location;
   final String time;
@@ -105,11 +105,12 @@ class RecentActivity {
   });
 
   factory RecentActivity.fromJson(Map<String, dynamic> json) {
+    final rawId = json['id'];
     return RecentActivity(
-      id: json['id'] ?? 0,
-      type: json['type'] ?? '',
-      location: json['location'] ?? '',
-      time: json['time'] ?? '',
+      id: rawId == null ? '' : rawId.toString(),
+      type: (json['type'] ?? '').toString(),
+      location: (json['location'] ?? '').toString(),
+      time: (json['time'] ?? '').toString(),
     );
   }
 

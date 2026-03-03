@@ -8,7 +8,6 @@ import 'theme_provider.dart';
 import 'auth_provider.dart';
 import '../screens/main_screen.dart';
 import '../screens/automatic_sos_interrupt_screen.dart';
-import '../widgets/sos_popup.dart';
 import '../services/websocket_service.dart';
 
 /// ✅ REQUIRED: global navigator key for background-triggered UI
@@ -52,20 +51,7 @@ class _SafeGuardAppState extends State<SafeGuardApp> {
           fullscreenDialog: true,
           builder: (_) => AutomaticSosInterruptScreen(
             reason: reason,
-            onConfirmedDanger: () async {
-              final latestContext = navigatorKey.currentContext;
-              if (latestContext == null) return;
-              showDialog(
-                context: latestContext,
-                barrierDismissible: false,
-                builder: (_) => const SOSPopup(
-                  incognito: false,
-                  groupId: 'bubble',
-                  autoStart: true,
-                  automaticFlow: true,
-                ),
-              );
-            },
+            onConfirmedDanger: () async {},
           ),
         ),
       );

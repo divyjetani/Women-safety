@@ -20,8 +20,9 @@ class SafetyService : Service(), SensorEventListener {
 
     companion object {
         const val NOTIFICATION_ID = 101
-        const val NOTIFICATION_CHANNEL_ID = "safety_channel"
+        const val NOTIFICATION_CHANNEL_ID = "safety_monitoring_channel"
         const val ACTION_STOP_AUDIO = "com.example.mobile.STOP_AUDIO"
+        const val ACTION_STOP_ALL_MONITORING = "com.example.mobile.STOP_ALL_MONITORING"
         const val AUTO_SOS_CHANNEL_ID = "auto_sos_channel"
         @Volatile var audioSharingEnabled = true  // 👈 accessible from SafetySocket
     }
@@ -38,6 +39,7 @@ class SafetyService : Service(), SensorEventListener {
         running = true
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
+        startLocationMonitoringService()
         // Start WebSocket connection when service starts
         SafetySocket.connect(
             this,
@@ -48,9 +50,31 @@ class SafetyService : Service(), SensorEventListener {
         startProximitySensing()
     }
 
+    private fun startLocationMonitoringService() {
+        try {
+            val intent = Intent(this, LocationSharingService::class.java)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            Log.i("SafetyService", "📍 Location monitoring service start requested")
+        } catch (e: Exception) {
+            Log.w("SafetyService", "Unable to start location monitoring service: ${e.message}")
+        }
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
         when (intent?.action) {
+            ACTION_STOP_ALL_MONITORING -> {
+                Log.i("SafetyService", "🛑 Stopping all monitoring from notification")
+                audioSharingEnabled = false
+                SafetySocket.close()
+                stopService(Intent(this, LocationSharingService::class.java))
+                SOSBridge.notifyServiceStopped()
+                stopSelf()
+            }
             ACTION_STOP_AUDIO -> {
                 Log.i("SafetyService", "🔕 Audio sharing stopped from notification")
                 audioSharingEnabled = false
@@ -168,7 +192,7 @@ class SafetyService : Service(), SensorEventListener {
     // =========================
     // NOTIFICATION
     // =========================
-    private fun buildNotification(text: String = "Monitoring active, audio sharing ON"): Notification {
+    private fun buildNotification(text: String = "Monitoring active (audio + location)"): Notification {
 
         // 🔹 Open app when notification tapped
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
@@ -194,6 +218,17 @@ class SafetyService : Service(), SensorEventListener {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val stopAllIntent = Intent(this, SafetyService::class.java).apply {
+            action = ACTION_STOP_ALL_MONITORING
+        }
+
+        val stopAllPendingIntent = PendingIntent.getService(
+            this,
+            2,
+            stopAllIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("Women Safety Monitoring")
             .setContentText(text)
@@ -204,6 +239,11 @@ class SafetyService : Service(), SensorEventListener {
                 android.R.drawable.ic_dialog_info,
                 "Stop Audio Sharing",
                 stopAudioPendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_delete,
+                "Stop Monitoring",
+                stopAllPendingIntent
             )
             .build()
     }

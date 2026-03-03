@@ -39,6 +39,26 @@ async def mark_read(user_id: int, notification_id: int):
     return {"success": True, "message": "Notification marked as read"}
 
 
+@router.delete("/{user_id}/{notification_id}")
+async def delete_notification(user_id: int, notification_id: int):
+    collections = get_collections()
+    notifs_col = collections["notifications"]
+
+    existing = await notifs_col.find_one(
+        {"user_id": user_id, "notifications.id": notification_id},
+        {"_id": 1},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    await notifs_col.update_one(
+        {"user_id": user_id},
+        {"$pull": {"notifications": {"id": notification_id}}},
+    )
+
+    return {"success": True, "message": "Notification deleted"}
+
+
 @router.post("/device-token")
 async def register_device_token(body: DeviceTokenRequest):
     collections = get_collections()

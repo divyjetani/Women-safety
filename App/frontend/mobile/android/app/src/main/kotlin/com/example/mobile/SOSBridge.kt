@@ -19,6 +19,7 @@ object SOSBridge {
                 }
                 "stopService" -> {
                     context.stopService(Intent(context, SafetyService::class.java))
+                    context.stopService(Intent(context, LocationSharingService::class.java))
                     result.success(null)
                 }
                 else -> result.notImplemented()

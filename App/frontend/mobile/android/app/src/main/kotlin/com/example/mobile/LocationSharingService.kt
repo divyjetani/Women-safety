@@ -27,7 +27,7 @@ class LocationSharingService : Service() {
 
     companion object {
         const val NOTIFICATION_ID = 102
-        const val NOTIFICATION_CHANNEL_ID = "location_sharing_channel"
+        const val NOTIFICATION_CHANNEL_ID = "safety_monitoring_channel"
         const val ACTION_STOP = "com.example.mobile.STOP_LOCATION_SHARING"
         private const val LOCATION_UPDATE_INTERVAL = 5000L  // 5 seconds
         private const val TAG = "LocationSharingService"
@@ -163,7 +163,7 @@ class LocationSharingService : Service() {
             }
 
             // Use the backend location sharing endpoint
-            val url = "http://10.189.91.13:8000/bubble/share-location"
+            val url = "http://10.101.4.13:8000/bubble/share-location"
 
             val request = object : JsonObjectRequest(
                 Method.POST, url, body,
@@ -200,24 +200,36 @@ class LocationSharingService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Location Sharing",
+                "Safety Monitoring",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Background location sharing with safety bubbles"
+                description = "Background safety monitoring for audio and location"
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
 
     private fun buildNotification(text: String): Notification {
+        val openAppIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+
+        val openAppPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            openAppIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Safety Bubble")
-            .setContentText(text)
+            .setContentTitle("Women Safety Monitoring")
+            .setContentText("Monitoring active (audio + location)")
             .setSmallIcon(android.R.drawable.ic_dialog_map)
+            .setContentIntent(openAppPendingIntent)
             .setOngoing(true)
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
-                "Stop",
+                "Stop Location",
                 PendingIntent.getService(
                     this,
                     0,

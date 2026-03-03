@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from datetime import datetime
 from schemas.profile import (
     Profile,
     UpdateProfile,
@@ -6,6 +7,7 @@ from schemas.profile import (
     AddContact,
 )
 from database.collections import get_collections
+from utils.profile_image import persist_profile_image
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -14,6 +16,7 @@ router = APIRouter(prefix="/profile", tags=["profile"])
 async def get_profile(user_id: int):
     collections = get_collections()
     users_col = collections["users"]
+    contacts_col = collections["contacts"]
 
     user_doc = await users_col.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
     if not user_doc:
@@ -21,6 +24,28 @@ async def get_profile(user_id: int):
 
     settings = user_doc.get("settings") or {}
     stats = user_doc.get("stats") or {}
+
+    created_at_raw = user_doc.get("created_at")
+    if not created_at_raw:
+        created_at_raw = datetime.utcnow().isoformat()
+        await users_col.update_one({"id": user_id}, {"$set": {"created_at": created_at_raw}})
+
+    safe_days = 1
+    try:
+        created_dt = datetime.fromisoformat(str(created_at_raw).replace("Z", "+00:00"))
+        safe_days = max(1, (datetime.utcnow() - created_dt.replace(tzinfo=None)).days + 1)
+    except Exception:
+        safe_days = 1
+
+    guardians_count = await contacts_col.count_documents({"user_id": user_id})
+    await users_col.update_one(
+        {"id": user_id},
+        {
+            "$set": {
+                "stats.guardians": guardians_count,
+            }
+        },
+    )
 
     return {
         "user_id": user_id,
@@ -31,10 +56,10 @@ async def get_profile(user_id: int):
         "aadhar_verified": user_doc.get("aadhar_verified", False),
         "isPremium": user_doc.get("is_premium", False),
         "stats": {
-            "safeDays": stats.get("safeDays", 0),
+            "safeDays": safe_days,
             "sosUsed": stats.get("sosUsed", 0),
             "checkins": stats.get("checkins", 0),
-            "guardians": stats.get("guardians", 0),
+            "guardians": guardians_count,
         },
         "settings": {
             "notifications": settings.get("notifications", True),
@@ -48,6 +73,7 @@ async def update_profile(user_id: int, body: UpdateProfile):
     collections = get_collections()
     users_col = collections["users"]
     user_updates = {}
+    existing_user = None
 
     if body.name is not None:
         user_updates["username"] = body.name
@@ -60,7 +86,17 @@ async def update_profile(user_id: int, body: UpdateProfile):
         user_updates["phone"] = body.phone
 
     if body.face_image is not None:
-        user_updates["face_image"] = body.face_image
+        existing_user = await users_col.find_one({"id": user_id}, {"face_image": 1})
+        if not existing_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        try:
+            user_updates["face_image"] = persist_profile_image(
+                body.face_image,
+                user_id=user_id,
+                previous_path=existing_user.get("face_image"),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
 
     if body.aadhar_verified is not None:
         user_updates["aadhar_verified"] = body.aadhar_verified
@@ -113,6 +149,7 @@ async def get_contacts(user_id: int):
 async def add_contact(user_id: int, body: AddContact):
     collections = get_collections()
     contacts_col = collections["contacts"]
+    users_col = collections["users"]
     
     count = await contacts_col.count_documents({"user_id": user_id})
     new_id = 100 + count + 1
@@ -128,6 +165,8 @@ async def add_contact(user_id: int, body: AddContact):
         "isPrimary": body.isPrimary,
     }
     await contacts_col.insert_one(new_contact)
+    new_guardians_count = await contacts_col.count_documents({"user_id": user_id})
+    await users_col.update_one({"id": user_id}, {"$set": {"stats.guardians": new_guardians_count}})
     
     return {"success": True, "contact": new_contact}
 
@@ -136,8 +175,11 @@ async def add_contact(user_id: int, body: AddContact):
 async def delete_contact(user_id: int, contact_id: int):
     collections = get_collections()
     contacts_col = collections["contacts"]
+    users_col = collections["users"]
     
     await contacts_col.delete_one({"user_id": user_id, "id": contact_id})
+    new_guardians_count = await contacts_col.count_documents({"user_id": user_id})
+    await users_col.update_one({"id": user_id}, {"$set": {"stats.guardians": new_guardians_count}})
     
     return {"success": True, "message": "Contact deleted"}
 

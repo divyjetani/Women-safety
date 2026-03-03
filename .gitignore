@@ -15,6 +15,8 @@ App/frontend/web/node_modules
 App/data
 group 4.pdf
 Capstone project (1).pptx
+whisper test/audio.wav
+App/backend/profile_pics/
 
 # Flutter repo-specific
 /bin/cache/

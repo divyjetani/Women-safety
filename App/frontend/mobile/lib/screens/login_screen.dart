@@ -66,17 +66,19 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forgotPassword() async {
-    if (_emailController.text.trim().isEmpty) {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
       AppSnackBar.show(context, 'Enter your email first.', type: AppSnackBarType.warning);
       return;
     }
 
     final authProvider = context.read<AuthProvider>();
-    final message = await authProvider.forgotPassword(_emailController.text.trim());
+    final message = await authProvider.forgotPassword(email);
 
     if (!mounted) return;
     if (message != null) {
       AppSnackBar.show(context, message, type: AppSnackBarType.success);
+      await _showResetPasswordDialog(email);
       return;
     }
 
@@ -87,6 +89,118 @@ class _LoginScreenState extends State<LoginScreen> {
       onRetry: _forgotPassword,
       buttonText: 'Retry',
     );
+  }
+
+  Future<void> _showResetPasswordDialog(String email) async {
+    final newPasswordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final authProvider = ctx.watch<AuthProvider>();
+
+            return AlertDialog(
+              title: const Text('Reset Password'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Set a new password for $email',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: newPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'New Password',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm Password',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: authProvider.isLoading ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: authProvider.isLoading
+                      ? null
+                      : () async {
+                          final newPassword = newPasswordController.text;
+                          final confirmPassword = confirmPasswordController.text;
+
+                          if (newPassword.isEmpty || confirmPassword.isEmpty) {
+                            AppSnackBar.show(ctx, 'Please fill both password fields.', type: AppSnackBarType.warning);
+                            return;
+                          }
+
+                          if (newPassword.length < 6) {
+                            AppSnackBar.show(ctx, 'Password must be at least 6 characters.', type: AppSnackBarType.warning);
+                            return;
+                          }
+
+                          if (newPassword != confirmPassword) {
+                            AppSnackBar.show(ctx, 'Passwords do not match.', type: AppSnackBarType.warning);
+                            return;
+                          }
+
+                          setDialogState(() {});
+                          final success = await ctx.read<AuthProvider>().resetPasswordAndLogin(
+                                email: email,
+                                newPassword: newPassword,
+                                confirmPassword: confirmPassword,
+                              );
+                          if (!mounted) return;
+
+                          if (success) {
+                            if (Navigator.of(dialogContext).canPop()) {
+                              Navigator.of(dialogContext).pop();
+                            }
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(builder: (_) => const MainScreen()),
+                            );
+                            return;
+                          }
+
+                          AppSnackBar.show(
+                            ctx,
+                            ctx.read<AuthProvider>().error ?? 'Failed to reset password.',
+                            type: AppSnackBarType.error,
+                          );
+                        },
+                  child: authProvider.isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Reset'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    newPasswordController.dispose();
+    confirmPasswordController.dispose();
   }
 
   @override

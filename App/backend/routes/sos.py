@@ -1,15 +1,25 @@
-from datetime import datetime
+import asyncio
+import math
+from datetime import datetime, timedelta
 from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from schemas.sos import SOSRequest, SOSResponse, ResolveSOSRequest
+from schemas.sos import (
+    SOSRequest,
+    SOSResponse,
+    ResolveSOSRequest,
+    AutomaticSOSStartRequest,
+    AutomaticSOSCancelRequest,
+)
 from database.collections import get_collections
 from services.alert_dispatch_service import send_fcm_notifications, send_sms_fallback
 
 router = APIRouter(prefix="/sos", tags=["sos"])
+AUTO_SOS_COUNTDOWN_SECONDS = 13
+_auto_sos_tasks: dict[str, asyncio.Task] = {}
 
 
 class SOSMediaUpdateRequest(BaseModel):
@@ -34,8 +44,7 @@ async def _append_notification(notifs_col, user_id: int, notification: dict):
     )
 
 
-@router.post("", response_model=SOSResponse)
-async def create_sos_report(request: SOSRequest):
+async def _dispatch_sos_report(request: SOSRequest) -> dict:
     collections = get_collections()
     users_col = collections["users"]
     contacts_col = collections["contacts"]
@@ -44,6 +53,7 @@ async def create_sos_report(request: SOSRequest):
     history_col = collections["history"]
     sos_events_col = collections["sos_events"]
     home_stats_col = collections["home_stats"]
+    home_activity_col = collections["home_activity"]
 
     user = await users_col.find_one({"id": request.user_id}, {"_id": 0})
     if not user:
@@ -174,8 +184,63 @@ async def create_sos_report(request: SOSRequest):
         upsert=True,
     )
 
-    await users_col.update_one({"id": request.user_id}, {"$inc": {"stats.sosUsed": 1}})
-    await home_stats_col.update_one({"user_id": request.user_id}, {"$inc": {"sosUsed": 1}})
+    created_at_raw = user.get("created_at")
+    safe_days = 1
+    if created_at_raw:
+        try:
+            created_dt = datetime.fromisoformat(str(created_at_raw).replace("Z", "+00:00"))
+            safe_days = max(1, (datetime.utcnow() - created_dt.replace(tzinfo=None)).days + 1)
+        except Exception:
+            safe_days = max(1, int((user.get("stats") or {}).get("safeDays", 1) or 1))
+
+    guardians_count = await contacts_col.count_documents({"user_id": request.user_id})
+
+    await users_col.update_one(
+        {"id": request.user_id},
+        {
+            "$inc": {"stats.sosUsed": 1},
+            "$set": {
+                "stats.safeDays": safe_days,
+                "stats.guardians": guardians_count,
+            },
+        },
+    )
+    await home_stats_col.update_one(
+        {"user_id": request.user_id},
+        {
+            "$inc": {"sosUsed": 1, "sos_used": 1, "alertsToday": 1, "alerts_today": 1},
+            "$setOnInsert": {
+                "safeZones": 0,
+                "safe_zones": 0,
+                "checkins": 0,
+                "safetyScore": 80,
+                "safety_score": 80,
+            },
+        },
+        upsert=True,
+    )
+
+    await home_activity_col.update_one(
+        {"user_id": request.user_id},
+        {
+            "$push": {
+                "activity": {
+                    "$each": [
+                        {
+                            "id": event_id,
+                            "type": "sos",
+                            "location": request.location,
+                            "time": created_at,
+                            "message": request.trigger_reason or request.trigger_type,
+                        }
+                    ],
+                    "$position": 0,
+                    "$slice": 50,
+                }
+            }
+        },
+        upsert=True,
+    )
 
     await _append_notification(
         notifs_col,
@@ -223,6 +288,209 @@ async def create_sos_report(request: SOSRequest):
         "success": True,
         "message": "SOS alert sent to emergency contacts, bubble members, and police prototype",
         "report_id": event_id,
+    }
+
+
+async def _auto_send_after_countdown(pending_id: str):
+    try:
+        await asyncio.sleep(AUTO_SOS_COUNTDOWN_SECONDS)
+        collections = get_collections()
+        auto_pending_col = collections["sos_auto_pending"]
+
+        pending_doc = await auto_pending_col.find_one({"id": pending_id}, {"_id": 0})
+        if not pending_doc or pending_doc.get("status") != "pending":
+            return
+
+        payload = pending_doc.get("sos_payload") or {}
+        request = SOSRequest(**payload)
+        send_result = await _dispatch_sos_report(request)
+
+        await auto_pending_col.update_one(
+            {"id": pending_id},
+            {
+                "$set": {
+                    "status": "sent",
+                    "sent_at": datetime.now().isoformat(),
+                    "report_id": send_result.get("report_id"),
+                    "result_message": send_result.get("message"),
+                }
+            },
+        )
+    except Exception as exc:
+        collections = get_collections()
+        auto_pending_col = collections["sos_auto_pending"]
+        await auto_pending_col.update_one(
+            {"id": pending_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "failed_at": datetime.now().isoformat(),
+                    "error": str(exc),
+                }
+            },
+        )
+    finally:
+        _auto_sos_tasks.pop(pending_id, None)
+
+
+@router.post("", response_model=SOSResponse)
+async def create_sos_report(request: SOSRequest):
+    return await _dispatch_sos_report(request)
+
+
+@router.post("/automatic/pending")
+async def start_automatic_sos_pending(request: AutomaticSOSStartRequest):
+    collections = get_collections()
+    users_col = collections["users"]
+    auto_pending_col = collections["sos_auto_pending"]
+
+    user = await users_col.find_one({"id": request.user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing_pending = await auto_pending_col.find(
+        {"user_id": request.user_id, "status": "pending"},
+        {"_id": 0, "id": 1},
+    ).to_list(length=5)
+    for item in existing_pending:
+        old_pending_id = item.get("id")
+        if not old_pending_id:
+            continue
+        task = _auto_sos_tasks.pop(old_pending_id, None)
+        if task and not task.done():
+            task.cancel()
+        await auto_pending_col.update_one(
+            {"id": old_pending_id},
+            {
+                "$set": {
+                    "status": "cancelled",
+                    "cancelled_at": datetime.now().isoformat(),
+                    "cancel_reason": "Superseded by a newer automatic SOS trigger",
+                }
+            },
+        )
+
+    now = datetime.now()
+    expires_at = now + timedelta(seconds=AUTO_SOS_COUNTDOWN_SECONDS)
+    pending_id = str(uuid4())
+
+    sos_payload = {
+        "user_id": request.user_id,
+        "location": request.location,
+        "lat": request.lat,
+        "lng": request.lng,
+        "battery": request.battery,
+        "trigger_type": "automatic",
+        "trigger_reason": request.reason,
+        "message": request.message or f"Automatic SOS triggered. Reason: {request.reason}",
+        "bubble_code": request.bubble_code,
+        "camera_front_image": request.camera_front_image,
+        "camera_back_image": request.camera_back_image,
+        "audio_10s_url": request.audio_10s_url,
+        "timestamp": now.isoformat(),
+    }
+
+    await auto_pending_col.insert_one(
+        {
+            "id": pending_id,
+            "user_id": request.user_id,
+            "reason": request.reason,
+            "status": "pending",
+            "countdown_seconds": AUTO_SOS_COUNTDOWN_SECONDS,
+            "created_at": now.isoformat(),
+            "expires_at": expires_at.isoformat(),
+            "sos_payload": sos_payload,
+            "report_id": None,
+        }
+    )
+
+    _auto_sos_tasks[pending_id] = asyncio.create_task(_auto_send_after_countdown(pending_id))
+
+    return {
+        "success": True,
+        "pending_id": pending_id,
+        "status": "pending",
+        "countdown_seconds": AUTO_SOS_COUNTDOWN_SECONDS,
+        "seconds_remaining": AUTO_SOS_COUNTDOWN_SECONDS,
+        "expires_at": expires_at.isoformat(),
+    }
+
+
+@router.patch("/automatic/{pending_id}/cancel")
+async def cancel_automatic_sos(pending_id: str, request: AutomaticSOSCancelRequest):
+    collections = get_collections()
+    auto_pending_col = collections["sos_auto_pending"]
+
+    pending_doc = await auto_pending_col.find_one(
+        {"id": pending_id, "user_id": request.user_id},
+        {"_id": 0, "status": 1},
+    )
+    if not pending_doc:
+        raise HTTPException(status_code=404, detail="Automatic SOS pending event not found")
+
+    status = pending_doc.get("status")
+    if status != "pending":
+        return {
+            "success": False,
+            "pending_id": pending_id,
+            "status": status,
+            "message": f"Automatic SOS can no longer be cancelled because status is '{status}'",
+        }
+
+    task = _auto_sos_tasks.pop(pending_id, None)
+    if task and not task.done():
+        task.cancel()
+
+    await auto_pending_col.update_one(
+        {"id": pending_id, "user_id": request.user_id},
+        {
+            "$set": {
+                "status": "cancelled",
+                "cancelled_at": datetime.now().isoformat(),
+                "cancel_reason": request.reason or "Cancelled by user from frontend",
+            }
+        },
+    )
+
+    return {
+        "success": True,
+        "pending_id": pending_id,
+        "status": "cancelled",
+        "message": "Automatic SOS cancelled successfully",
+    }
+
+
+@router.get("/automatic/{pending_id}")
+async def get_automatic_sos_status(pending_id: str):
+    collections = get_collections()
+    auto_pending_col = collections["sos_auto_pending"]
+
+    pending_doc = await auto_pending_col.find_one({"id": pending_id}, {"_id": 0})
+    if not pending_doc:
+        raise HTTPException(status_code=404, detail="Automatic SOS pending event not found")
+
+    status = pending_doc.get("status")
+    seconds_remaining = 0
+    if status == "pending":
+        try:
+            expires_at = datetime.fromisoformat(str(pending_doc.get("expires_at")))
+            seconds_remaining = max(0, math.ceil((expires_at - datetime.now()).total_seconds()))
+        except Exception:
+            seconds_remaining = 0
+
+    return {
+        "success": True,
+        "pending_id": pending_doc.get("id"),
+        "user_id": pending_doc.get("user_id"),
+        "status": status,
+        "reason": pending_doc.get("reason"),
+        "seconds_remaining": seconds_remaining,
+        "countdown_seconds": pending_doc.get("countdown_seconds", AUTO_SOS_COUNTDOWN_SECONDS),
+        "created_at": pending_doc.get("created_at"),
+        "expires_at": pending_doc.get("expires_at"),
+        "report_id": pending_doc.get("report_id"),
+        "result_message": pending_doc.get("result_message"),
+        "error": pending_doc.get("error"),
     }
 
 

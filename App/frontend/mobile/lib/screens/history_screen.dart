@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/api_service.dart';
 import '../app/auth_provider.dart';
+import '../widgets/app_snackbar.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -52,8 +53,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to resolve SOS: $e')),
+      AppSnackBar.show(
+        context,
+        'Failed to resolve SOS: $e',
+        type: AppSnackBarType.error,
       );
     } finally {
       if (mounted) {

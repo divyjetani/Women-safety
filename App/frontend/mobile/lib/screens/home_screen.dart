@@ -20,18 +20,17 @@ import '../widgets/skeleton_loader_for_home.dart';
 import '../widgets/app_snackbar.dart';
 import '../app/theme.dart';
 
-// ✅ bottom sheet pages
-import 'guardians_screen.dart';
+// bottom sheet pages
 import 'history_screen.dart';
 import 'help_support_screen.dart';
 
-// ✅ detail pages
+// detail pages
 import 'package:mobile/widgets/safety_score_details.dart';
 import 'package:mobile/widgets/stats_details.dart';
 import 'package:mobile/widgets/quick_action_details.dart';
 import 'package:mobile/widgets/recent_activity_details.dart';
 
-// ✅ CTA pages
+// CTA pages
 import 'package:mobile/screens/anonymous_recording_screen.dart';
 import 'package:mobile/screens/fake_call_screen.dart';
 
@@ -51,6 +50,9 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  static final Map<int, SafetyStats> _sessionStatsByUser = {};
+  static final Map<int, List<RecentActivity>> _sessionActivitiesByUser = {};
+
   SafetyStats? _safetyStats;
   List<RecentActivity> _recentActivities = [];
 
@@ -96,17 +98,18 @@ class _HomeScreenState extends State<HomeScreen> {
     // ▶️ START sharing → ask permissions first
     final mic = await Permission.microphone.request();
     final location = await Permission.location.request();
+    final notifications = await Permission.notification.request();
 
-    if (!mic.isGranted || !location.isGranted) {
+    if (!mic.isGranted || !location.isGranted || !notifications.isGranted) {
       if (!mounted) return;
 
-      AppSnackBar.show(context, 'Microphone & location permission required', type: AppSnackBarType.warning);
+      AppSnackBar.show(context, 'Microphone, location and notification permission required', type: AppSnackBarType.warning);
       return;
     }
 
     await _safetyChannel.invokeMethod('startService');
     // open websocket when starting monitoring (native service sends audio from Kotlin)
-    await WebSocketService().connect();
+    await WebSocketService().connect(_userId);
     await prefs.setBool('bg_safety_on', true);
 
     setState(() {
@@ -291,8 +294,22 @@ class _HomeScreenState extends State<HomeScreen> {
   // ======================================================
   // LOAD HOME DATA
   // ======================================================
-  Future<void> _loadHomeData() async {
+  Future<void> _loadHomeData({bool forceRefresh = false}) async {
     if (_userId == 0) return;
+
+    final cachedStats = _sessionStatsByUser[_userId];
+    final cachedActivities = _sessionActivitiesByUser[_userId];
+    if (!forceRefresh && cachedStats != null && cachedActivities != null) {
+      setState(() {
+        _safetyStats = cachedStats;
+        _recentActivities = List<RecentActivity>.from(cachedActivities);
+        _isLoading = false;
+        _hasError = false;
+        _errorMessage = '';
+        _timedOut = false;
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -320,6 +337,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _recentActivities = activities;
         _isLoading = false;
       });
+
+      _sessionStatsByUser[_userId] = stats;
+      _sessionActivitiesByUser[_userId] = List<RecentActivity>.from(activities);
 
       _refreshLiveSafetyScoreInBackground();
     } catch (e) {
@@ -395,7 +415,7 @@ class _HomeScreenState extends State<HomeScreen> {
   // ======================================================
   Future<void> _onRefresh() async {
     await _loadUserFromPrefsOrBackend();
-    await _loadHomeData();
+    await _loadHomeData(forceRefresh: true);
   }
 
   // ======================================================

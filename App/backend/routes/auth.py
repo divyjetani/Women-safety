@@ -8,8 +8,9 @@ try:
 except Exception:
     bcrypt_lib = None
 
-from schemas.user import LoginRequest, RegisterRequest, ForgotPasswordRequest
+from schemas.user import LoginRequest, RegisterRequest, ForgotPasswordRequest, ResetPasswordRequest
 from database.collections import get_collections
+from utils.profile_image import persist_profile_image
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
@@ -85,6 +86,11 @@ async def register(user: RegisterRequest):
     last_user = await users_col.find_one(sort=[("id", -1)])
     next_id = (last_user.get("id", 0) if last_user else 0) + 1
 
+    try:
+        face_image_path = persist_profile_image(user.face_image, user_id=next_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
     username = user.username.strip() if user.username else normalized_email.split("@")[0]
 
     doc = {
@@ -95,10 +101,21 @@ async def register(user: RegisterRequest):
         "password_hash": pwd_context.hash(user.password),
         "gender": user.gender,
         "birthdate": user.birthdate.isoformat(),
-        "face_image": user.face_image,
+        "face_image": face_image_path,
         "aadhar_verified": user.aadhar_verified,
         "emergency_contacts": user.emergency_contacts,
         "is_premium": user.is_premium,
+        "created_at": datetime.utcnow().isoformat(),
+        "stats": {
+            "safeDays": 1,
+            "sosUsed": 0,
+            "checkins": 0,
+            "guardians": len(user.emergency_contacts),
+        },
+        "settings": {
+            "notifications": True,
+            "locationSharing": True,
+        },
     }
 
     await users_col.insert_one(doc)
@@ -123,5 +140,35 @@ async def forgot_password(request: ForgotPasswordRequest):
 
     return {
         "success": True,
-        "message": f"Password reset link sent to {normalized_email} (demo)",
+        "message": "Email verified. Enter a new password to reset.",
+    }
+
+
+@router.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    collections = get_collections()
+    users_col = collections["users"]
+
+    normalized_email = request.email.strip().lower()
+    user = await users_col.find_one({"email": normalized_email})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found for this email")
+
+    new_password = request.new_password.strip()
+    confirm_password = request.confirm_password.strip()
+
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    if new_password != confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+
+    await users_col.update_one(
+        {"id": user.get("id")},
+        {"$set": {"password_hash": pwd_context.hash(new_password)}},
+    )
+
+    return {
+        "success": True,
+        "message": "Password reset successful",
     }

@@ -4,11 +4,9 @@ from schemas.group import (
     CreateGroupReq,
     AddMemberReq,
     ShareReq,
-    CreateBubbleReq,
-    JoinBubbleReq,
 )
 from database.collections import get_collections
-from utils.helpers import generate_code, now_iso
+from utils.helpers import now_iso
 
 router = APIRouter(tags=["groups"])
 
@@ -163,66 +161,3 @@ async def list_sos(group_id: str):
         d.pop("_id", None)
     
     return {"group_id": group_id, "events": docs}
-
-@router.post("/bubble/create")
-async def create_bubble(req: CreateBubbleReq):
-    """Create a bubble/safety group"""
-    collections = get_collections()
-    bubbles_col = collections["bubbles"]
-    
-    code = generate_code()
-
-    bubble = {
-        "code": code,
-        "name": req.name,
-        "icon": req.icon,
-        "color": req.color,
-        "admin_id": req.admin_id,
-        "members": [
-            {"user_id": req.admin_id, "name": req.admin_name, "lat": None, "lng": None}
-        ],
-        "created_at": now_iso(),
-    }
-
-    await bubbles_col.insert_one(bubble)
-    bubble.pop("_id", None)
-    
-    return {"group": bubble, "invite_link": f"safebubble://join/{code}"}
-
-
-@router.post("/bubble/join")
-async def join_bubble(req: JoinBubbleReq):
-    collections = get_collections()
-    bubbles_col = collections["bubbles"]
-    
-    bubble = await bubbles_col.find_one({"code": req.code})
-    if not bubble:
-        raise HTTPException(status_code=404, detail="Invalid bubble code")
-
-    if any(m.get("user_id") == req.user_id for m in bubble.get("members", [])):
-        bubble.pop("_id", None)
-        return bubble
-    
-    
-    member = {"user_id": req.user_id, "name": req.name, "lat": None, "lng": None}
-    await bubbles_col.update_one({"code": req.code}, {"$push": {"members": member}})
-    bubble = await bubbles_col.find_one({"code": req.code}, {"_id": 0})
-    
-    return bubble
-
-
-@router.delete("/bubble/{code}")
-async def delete_bubble(code: str, user_id: int):
-    collections = get_collections()
-    bubbles_col = collections["bubbles"]
-    
-    bubble = await bubbles_col.find_one({"code": code})
-    if not bubble:
-        raise HTTPException(status_code=404, detail="Bubble not found")
-    
-    if bubble.get("admin_id") != user_id:
-        raise HTTPException(status_code=403, detail="Only admin can delete")
-    
-    await bubbles_col.delete_one({"code": code})
-    
-    return {"success": True, "message": "Bubble deleted"}

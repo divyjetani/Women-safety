@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
+import '../widgets/app_snackbar.dart';
 
 class AnalyticsScreenV2 extends StatefulWidget {
   const AnalyticsScreenV2({super.key});
@@ -10,105 +11,121 @@ class AnalyticsScreenV2 extends StatefulWidget {
 }
 
 class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
+  static _AnalyticsSessionCache? _sessionCache;
+
   bool loading = true;
   bool isPremium = false;
+  bool generatingAi = false;
+  int _userId = 0;
 
-  final List<Map<String, String>> alertsHistory = const [
-    {
-      'time': 'Today, 08:12 PM',
-      'location': 'MG Road, Ahmedabad',
-      'threatType': 'Harassment Risk',
-    },
-    {
-      'time': 'Today, 06:40 PM',
-      'location': 'Nehru Bridge Stop',
-      'threatType': 'Low Visibility Area',
-    },
-    {
-      'time': 'Yesterday, 10:05 PM',
-      'location': 'Railway Underpass',
-      'threatType': 'Crowd Panic Signal',
-    },
-    {
-      'time': 'Yesterday, 07:25 PM',
-      'location': 'University Gate',
-      'threatType': 'Aggressive Noise Pattern',
-    },
-  ];
-
-  final List<Map<String, dynamic>> threatDistribution = const [
-    {'label': '0-20', 'value': 8},
-    {'label': '21-40', 'value': 17},
-    {'label': '41-60', 'value': 28},
-    {'label': '61-80', 'value': 34},
-    {'label': '81-100', 'value': 13},
-  ];
-
-  final List<Map<String, dynamic>> alertCategories = const [
-    {'label': 'High Threat Alerts', 'count': 9},
-    {'label': 'Soft Alerts', 'count': 23},
-    {'label': 'False Alerts', 'count': 6},
-  ];
-
-  final List<Map<String, dynamic>> hourlyPattern = const [
-    {'slot': '6 AM', 'count': 1},
-    {'slot': '9 AM', 'count': 2},
-    {'slot': '1 PM', 'count': 4},
-    {'slot': '6 PM', 'count': 7},
-    {'slot': '9 PM', 'count': 11},
-  ];
-
-  final List<Map<String, dynamic>> dailyPattern = const [
-    {'slot': 'Mon', 'count': 4},
-    {'slot': 'Tue', 'count': 5},
-    {'slot': 'Wed', 'count': 6},
-    {'slot': 'Thu', 'count': 7},
-    {'slot': 'Fri', 'count': 9},
-    {'slot': 'Sat', 'count': 5},
-    {'slot': 'Sun', 'count': 2},
-  ];
-
-  final List<Map<String, dynamic>> weeklyPattern = const [
-    {'slot': 'W1', 'count': 18},
-    {'slot': 'W2', 'count': 22},
-    {'slot': 'W3', 'count': 16},
-    {'slot': 'W4', 'count': 25},
-  ];
-
-  final List<Map<String, String>> aiRecommendations = const [
-    {
-      'title': 'Route shift suggestion',
-      'body': 'Avoid Railway Underpass after 9 PM. Use CG Road corridor for lower night risk.',
-    },
-    {
-      'title': 'Guardian sync',
-      'body': 'Enable quick check-ins between 7 PM and 10 PM for faster alert verification.',
-    },
-    {
-      'title': 'Audio confidence',
-      'body': 'Background traffic spikes false alerts; use earphone mic for cleaner evidence capture.',
-    },
-  ];
+  List<Map<String, dynamic>> alertsHistory = [];
+  List<Map<String, dynamic>> threatDistribution = [];
+  List<Map<String, dynamic>> alertCategories = [];
+  List<Map<String, dynamic>> hourlyPattern = [];
+  List<Map<String, dynamic>> dailyPattern = [];
+  List<Map<String, dynamic>> weeklyPattern = [];
+  List<Map<String, dynamic>> aiRecommendations = [];
+  double averageAudioScore = 0.0;
+  String averageAudioSummary = '';
 
   @override
   void initState() {
     super.initState();
-    _loadPremiumState();
+    _loadAnalyticsData();
   }
 
-  Future<void> _loadPremiumState() async {
+  List<Map<String, dynamic>> _listFrom(dynamic value) {
+    if (value is! List) return [];
+    return value.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+  }
+
+  void _applySessionCache(_AnalyticsSessionCache cache) {
+    isPremium = cache.isPremium;
+    _userId = cache.userId;
+    alertsHistory = cache.alertsHistory;
+    threatDistribution = cache.threatDistribution;
+    alertCategories = cache.alertCategories;
+    hourlyPattern = cache.hourlyPattern;
+    dailyPattern = cache.dailyPattern;
+    weeklyPattern = cache.weeklyPattern;
+    aiRecommendations = cache.aiRecommendations;
+    averageAudioScore = cache.averageAudioScore;
+    averageAudioSummary = cache.averageAudioSummary;
+  }
+
+  Future<void> _loadAnalyticsData({bool forceRefresh = false}) async {
     setState(() => loading = true);
     try {
       final currentUser = await ApiService.getCurrentUser();
-      if (currentUser != null) {
-        final profile = await ApiService.getProfile(currentUser.id);
-        isPremium = profile['isPremium'] == true;
+      if (currentUser == null) {
+        if (mounted) setState(() => loading = false);
+        return;
       }
+
+      final cache = _sessionCache;
+      if (!forceRefresh && cache != null && cache.userId == currentUser.id) {
+        if (!mounted) return;
+        setState(() {
+          _applySessionCache(cache);
+          loading = false;
+        });
+        return;
+      }
+
+      _userId = currentUser.id;
+      final profile = await ApiService.getProfile(currentUser.id);
+      final overview = await ApiService.getAnalyticsOverview(userId: currentUser.id);
+
+      final newCache = _AnalyticsSessionCache(
+        userId: currentUser.id,
+        isPremium: profile['isPremium'] == true,
+        alertsHistory: _listFrom(overview['alertsHistory']),
+        threatDistribution: _listFrom(overview['threatDistribution']),
+        alertCategories: _listFrom(overview['alertCategories']),
+        hourlyPattern: _listFrom(overview['hourlyPattern']),
+        dailyPattern: _listFrom(overview['dailyPattern']),
+        weeklyPattern: _listFrom(overview['weeklyPattern']),
+        aiRecommendations: _listFrom(overview['aiRecommendations']),
+        averageAudioScore: (overview['averageAudioScore'] as num?)?.toDouble() ?? 0.0,
+        averageAudioSummary: (overview['averageAudioSummary'] ?? '').toString(),
+      );
+      _sessionCache = newCache;
+
+      if (!mounted) return;
+      setState(() {
+        _applySessionCache(newCache);
+        loading = false;
+      });
     } catch (_) {
-      isPremium = false;
-    } finally {
       if (mounted) {
         setState(() => loading = false);
+      }
+    }
+  }
+
+  Future<void> _generateAiSuggestions() async {
+    if (_userId <= 0 || generatingAi) return;
+
+    setState(() => generatingAi = true);
+    try {
+      await ApiService.generateAiSuggestions(userId: _userId);
+      await _loadAnalyticsData(forceRefresh: true);
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'AI suggestions generated and saved.',
+        type: AppSnackBarType.success,
+      );
+    } catch (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Failed to generate AI suggestions.',
+        type: AppSnackBarType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => generatingAi = false);
       }
     }
   }
@@ -125,7 +142,7 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _loadPremiumState,
+          onRefresh: () => _loadAnalyticsData(forceRefresh: true),
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -143,8 +160,8 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                           (item) => ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.location_on_outlined),
-                            title: Text(item['location']!),
-                            subtitle: Text('${item['threatType']} • ${item['time']}'),
+                            title: Text((item['location'] ?? '').toString()),
+                            subtitle: Text('${(item['threatType'] ?? '').toString()} • ${(item['time'] ?? '').toString()}'),
                           ),
                         )
                         .toList(),
@@ -159,8 +176,8 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                         .map(
                           (item) => _barRow(
                             context,
-                            label: item['label'] as String,
-                            value: item['value'] as int,
+                            label: (item['label'] ?? '').toString(),
+                            value: (item['value'] as num?)?.toInt() ?? 0,
                             maxValue: 40,
                           ),
                         )
@@ -177,9 +194,9 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                           (item) => ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.label_important_outline_rounded),
-                            title: Text(item['label'] as String),
+                            title: Text((item['label'] ?? '').toString()),
                             trailing: Text(
-                              '${item['count']}',
+                              '${(item['count'] as num?)?.toInt() ?? 0}',
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                           ),
@@ -196,8 +213,8 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                         .map(
                           (item) => _barRow(
                             context,
-                            label: item['slot'] as String,
-                            value: item['count'] as int,
+                            label: (item['slot'] ?? '').toString(),
+                            value: (item['count'] as num?)?.toInt() ?? 0,
                             maxValue: 12,
                           ),
                         )
@@ -213,8 +230,8 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                         .map(
                           (item) => _barRow(
                             context,
-                            label: item['slot'] as String,
-                            value: item['count'] as int,
+                            label: (item['slot'] ?? '').toString(),
+                            value: (item['count'] as num?)?.toInt() ?? 0,
                             maxValue: 10,
                           ),
                         )
@@ -230,8 +247,8 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                         .map(
                           (item) => _barRow(
                             context,
-                            label: item['slot'] as String,
-                            value: item['count'] as int,
+                            label: (item['slot'] ?? '').toString(),
+                            value: (item['count'] as num?)?.toInt() ?? 0,
                             maxValue: 30,
                           ),
                         )
@@ -245,10 +262,10 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('0.74', style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
+                      Text(averageAudioScore.toStringAsFixed(2), style: Theme.of(context).textTheme.displaySmall?.copyWith(fontWeight: FontWeight.w800)),
                       const SizedBox(height: 6),
                       Text(
-                        'Audio confidence is stable with slight noise spikes after 8 PM.',
+                        averageAudioSummary,
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -258,35 +275,45 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                 _premiumSection(
                   context,
                   title: 'Threat Hours Pattern Insights',
-                  body: 'Peak risk window is 8:30 PM - 10:15 PM near transit and underpass zones.',
+                  body: 'Dynamic premium insight based on your high-alert hourly trend.',
                 ),
                 const SizedBox(height: 12),
                 _premiumSection(
                   context,
                   title: 'Personal Heatmap Suggestion',
-                  body: 'In this area, avoid solo movement after 9 PM and use main-road routes.',
+                  body: 'Dynamic premium insight based on your location and SOS history.',
                 ),
                 const SizedBox(height: 12),
                 _premiumSection(
                   context,
                   title: 'Time-based Risk Insights',
-                  body: 'Your risk trend rises 2.4x during late evening commute compared to afternoon.',
+                  body: 'Dynamic premium insight based on recent event timing.',
                 ),
                 const SizedBox(height: 12),
                 _sectionCard(
                   context,
                   title: 'Overall Safety Recommendations (AI)',
                   child: Column(
-                    children: aiRecommendations
-                        .map(
-                          (item) => ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: const Icon(Icons.tips_and_updates_outlined),
-                            title: Text(item['title']!),
-                            subtitle: Text(item['body']!),
-                          ),
-                        )
-                        .toList(),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton.icon(
+                          onPressed: generatingAi ? null : _generateAiSuggestions,
+                          icon: const Icon(Icons.auto_awesome_outlined),
+                          label: Text(generatingAi ? 'Generating...' : 'Generate AI Suggestions'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...aiRecommendations.map(
+                        (item) => ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.tips_and_updates_outlined),
+                          title: Text((item['title'] ?? '').toString()),
+                          subtitle: Text((item['body'] ?? '').toString()),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -361,34 +388,61 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
     required int value,
     required int maxValue,
   }) {
-    final ratio = (value / maxValue).clamp(0, 1).toDouble();
+    final ratio = (value <= 0 || maxValue <= 0) ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(width: 48, child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+          SizedBox(
+            width: 56,
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ),
           Expanded(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(99),
+              borderRadius: BorderRadius.circular(999),
               child: LinearProgressIndicator(
                 value: ratio,
                 minHeight: 8,
-                backgroundColor: Theme.of(context).dividerColor.withValues(alpha: 0.25),
+                backgroundColor: Theme.of(context).dividerColor.withValues(alpha: 0.28),
               ),
             ),
           ),
           const SizedBox(width: 10),
-          SizedBox(
-            width: 28,
-            child: Text(
-              '$value',
-              textAlign: TextAlign.right,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
+          Text(
+            '$value',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
           ),
         ],
       ),
     );
   }
+}
+
+class _AnalyticsSessionCache {
+  final int userId;
+  final bool isPremium;
+  final List<Map<String, dynamic>> alertsHistory;
+  final List<Map<String, dynamic>> threatDistribution;
+  final List<Map<String, dynamic>> alertCategories;
+  final List<Map<String, dynamic>> hourlyPattern;
+  final List<Map<String, dynamic>> dailyPattern;
+  final List<Map<String, dynamic>> weeklyPattern;
+  final List<Map<String, dynamic>> aiRecommendations;
+  final double averageAudioScore;
+  final String averageAudioSummary;
+
+  const _AnalyticsSessionCache({
+    required this.userId,
+    required this.isPremium,
+    required this.alertsHistory,
+    required this.threatDistribution,
+    required this.alertCategories,
+    required this.hourlyPattern,
+    required this.dailyPattern,
+    required this.weeklyPattern,
+    required this.aiRecommendations,
+    required this.averageAudioScore,
+    required this.averageAudioSummary,
+  });
 }

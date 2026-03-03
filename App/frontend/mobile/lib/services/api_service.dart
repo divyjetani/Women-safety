@@ -174,6 +174,26 @@ class ApiService {
     return AuthMessageResponse.fromJson(jsonResponse);
   }
 
+  static Future<AuthMessageResponse> resetPassword({
+    required String email,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final jsonResponse = await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/auth/reset-password'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'email': email,
+          'new_password': newPassword,
+          'confirm_password': confirmPassword,
+        }),
+      );
+    });
+
+    return AuthMessageResponse.fromJson(jsonResponse);
+  }
+
   static Future<void> logout() async {
     try {
       await BackgroundLocationService.stopBackgroundLocationSharing();
@@ -274,6 +294,68 @@ class ApiService {
     return SOSResponse.fromJson(jsonResponse);
   }
 
+  static Future<Map<String, dynamic>> startAutomaticSosPending({
+    required int userId,
+    required String reason,
+    required String location,
+    double? lat,
+    double? lng,
+    int? battery,
+    String? bubbleCode,
+    String? cameraFrontImage,
+    String? cameraBackImage,
+    String? audio10sUrl,
+    String? message,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/sos/automatic/pending'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'reason': reason,
+          'location': location,
+          'lat': lat,
+          'lng': lng,
+          'battery': battery,
+          'bubble_code': bubbleCode,
+          'camera_front_image': cameraFrontImage,
+          'camera_back_image': cameraBackImage,
+          'audio_10s_url': audio10sUrl,
+          'message': message,
+        }),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> cancelAutomaticSos({
+    required String pendingId,
+    required int userId,
+    String? reason,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.patch(
+        Uri.parse('$baseUrl/sos/automatic/$pendingId/cancel'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'reason': reason,
+        }),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> getAutomaticSosStatus({
+    required String pendingId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/sos/automatic/$pendingId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
   // ==========================
   // ✅ HOME APIs
   // ==========================
@@ -326,7 +408,7 @@ class ApiService {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cached_activity_$userId', jsonEncode(jsonList));
 
-      return jsonList.map((e) => RecentActivity.fromJson(e)).toList();
+      return _parseRecentActivities(jsonList);
     } catch (e) {
       // ✅ cached fallback
       final prefs = await SharedPreferences.getInstance();
@@ -334,11 +416,23 @@ class ApiService {
 
       if (cached != null) {
         final List<dynamic> data = jsonDecode(cached);
-        return data.map((item) => RecentActivity.fromJson(item)).toList();
+        return _parseRecentActivities(data);
       }
 
       return [];
     }
+  }
+
+  static List<RecentActivity> _parseRecentActivities(List<dynamic> rawList) {
+    final List<RecentActivity> parsed = [];
+    for (final item in rawList) {
+      if (item is Map<String, dynamic>) {
+        parsed.add(RecentActivity.fromJson(item));
+      } else if (item is Map) {
+        parsed.add(RecentActivity.fromJson(Map<String, dynamic>.from(item)));
+      }
+    }
+    return parsed;
   }
 
   // ==========================
@@ -513,6 +607,18 @@ class ApiService {
     return await _makeRequest(() async {
       return await http.put(
         Uri.parse('$baseUrl/notifications/$userId/$notificationId/read'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> deleteNotification({
+    required int userId,
+    required int notificationId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.delete(
+        Uri.parse('$baseUrl/notifications/$userId/$notificationId'),
         headers: await _headers(withAuth: true),
       );
     });
@@ -857,6 +963,31 @@ class ApiService {
     });
   }
 
+  static Future<Map<String, dynamic>> getAnalyticsOverview({
+    required int userId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/analytics/overview?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> generateAiSuggestions({
+    required int userId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/ai/suggestions/generate'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+        }),
+      );
+    });
+  }
+
   // ==========================
 // ✅ BUBBLES / GROUPS
 // ==========================
@@ -933,6 +1064,43 @@ class ApiService {
     return await _makeRequest(() async {
       return await http.post(
         Uri.parse('$baseUrl/bubble/join/$token'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> deleteBubble({
+    required String code,
+    required int adminId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.delete(
+        Uri.parse('$baseUrl/bubble/$code?admin_id=$adminId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> leaveBubble({
+    required String code,
+    required int userId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/bubble/$code/leave?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> kickBubbleMember({
+    required String code,
+    required int adminId,
+    required int memberUserId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.post(
+        Uri.parse('$baseUrl/bubble/$code/kick?admin_id=$adminId&member_user_id=$memberUserId'),
         headers: await _headers(withAuth: true),
       );
     });

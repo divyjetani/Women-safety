@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../app/auth_provider.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/profile_image_cache_service.dart';
 import '../widgets/app_snackbar.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -36,8 +37,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late final TextEditingController phoneCtrl;
 
   final ImagePicker _picker = ImagePicker();
-  String _faceImageBase64 = '';
+  String _faceImageValue = '';
   File? _pickedImage;
+  bool _removedPhoto = false;
+  String? _localFaceImagePath;
   bool saving = false;
 
   @override
@@ -46,7 +49,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     nameCtrl = TextEditingController(text: widget.initialName);
     emailCtrl = TextEditingController(text: widget.initialEmail);
     phoneCtrl = TextEditingController(text: widget.initialPhone);
-    _faceImageBase64 = widget.initialFaceImage;
+    _faceImageValue = widget.initialFaceImage;
+    _initLocalImage();
+  }
+
+  Future<void> _initLocalImage() async {
+    final local = await ProfileImageCacheService.getLocalPath(widget.userId);
+    if (!mounted) return;
+    setState(() {
+      _localFaceImagePath = local;
+    });
   }
 
   @override
@@ -71,7 +83,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
     setState(() {
       _pickedImage = file;
-      _faceImageBase64 = base64Encode(bytes);
+      _faceImageValue = base64Encode(bytes);
+      _removedPhoto = false;
+    });
+  }
+
+  void _removeProfileImage() {
+    setState(() {
+      _pickedImage = null;
+      _faceImageValue = '';
+      _removedPhoto = true;
+      _localFaceImagePath = null;
     });
   }
 
@@ -89,8 +111,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         name: nameCtrl.text.trim(),
         email: emailCtrl.text.trim(),
         phone: phoneCtrl.text.trim(),
-        faceImage: _faceImageBase64,
+        faceImage: _faceImageValue,
       );
+
+      final profileJson = await ApiService.getProfile(widget.userId);
+      final storedFaceImage = (profileJson['face_image'] ?? '').toString();
+
+      final localPath = await ProfileImageCacheService.syncFromSource(
+        userId: widget.userId,
+        source: storedFaceImage,
+      );
+      if (_removedPhoto) {
+        await ProfileImageCacheService.clearLocal(widget.userId);
+      }
 
       final authProvider = context.read<AuthProvider>();
       final current = authProvider.currentUser;
@@ -103,11 +136,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           emergencyContacts: current.emergencyContacts,
           gender: current.gender,
           birthdate: current.birthdate,
-          faceImage: _faceImageBase64,
+          faceImage: storedFaceImage,
           aadharVerified: current.aadharVerified,
           isPremium: current.isPremium,
         );
         await authProvider.setCurrentUser(updatedUser);
+      }
+
+      if (mounted) {
+        setState(() {
+          _localFaceImagePath = localPath;
+        });
       }
 
       if (!mounted) return;
@@ -136,11 +175,34 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       );
     }
 
-    if (_faceImageBase64.trim().isNotEmpty) {
-      try {
+    if (_localFaceImagePath != null && _localFaceImagePath!.trim().isNotEmpty) {
+      final local = File(_localFaceImagePath!);
+      if (local.existsSync()) {
         return CircleAvatar(
           radius: 42,
-          backgroundImage: MemoryImage(base64Decode(_faceImageBase64)),
+          backgroundImage: FileImage(local),
+        );
+      }
+    }
+
+    if (_faceImageValue.trim().isNotEmpty) {
+      try {
+        if (_faceImageValue.startsWith('/profile_pics/') ||
+            _faceImageValue.startsWith('profile_pics/') ||
+            _faceImageValue.startsWith('http://') ||
+            _faceImageValue.startsWith('https://')) {
+          final resolvedUrl = _faceImageValue.startsWith('http')
+              ? _faceImageValue
+              : '${ApiService.baseUrl}${_faceImageValue.startsWith('/') ? '' : '/'}$_faceImageValue';
+          return CircleAvatar(
+            radius: 42,
+            backgroundImage: NetworkImage(resolvedUrl),
+          );
+        }
+
+        return CircleAvatar(
+          radius: 42,
+          backgroundImage: MemoryImage(base64Decode(_faceImageValue)),
         );
       } catch (_) {
         // ignore and fall through
@@ -171,10 +233,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               Center(child: _buildAvatarPreview()),
               const SizedBox(height: 10),
               Center(
-                child: OutlinedButton.icon(
-                  onPressed: saving ? null : _pickProfileImage,
-                  icon: const Icon(Icons.photo_camera_outlined),
-                  label: const Text('Change Profile Photo'),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: saving ? null : _pickProfileImage,
+                      icon: const Icon(Icons.photo_camera_outlined),
+                      label: const Text('Change Profile Photo'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: saving ? null : _removeProfileImage,
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      label: const Text('Remove'),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 18),

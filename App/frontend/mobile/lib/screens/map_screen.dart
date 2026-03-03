@@ -428,6 +428,95 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  Future<void> _refreshGroupsAfterMutation({String? preferredGroupId}) async {
+    final backendGroups = await ApiService.getUserBubbles();
+    setState(() {
+      _groups = backendGroups;
+      if (backendGroups.isEmpty) {
+        _currentGroup = null;
+      } else if (preferredGroupId != null) {
+        _currentGroup = backendGroups.firstWhere(
+          (g) => g.id == preferredGroupId,
+          orElse: () => backendGroups.first,
+        );
+      } else {
+        _currentGroup = backendGroups.first;
+      }
+    });
+
+    await GroupStorage.saveGroups(backendGroups);
+    if (_currentGroup != null) {
+      await GroupStorage.saveSelectedGroup(_currentGroup!.id);
+      _startLocationSharing();
+    } else {
+      _locationTimer?.cancel();
+      _wsService?.disconnect();
+      await BackgroundLocationService.stopBackgroundLocationSharing();
+    }
+    await _updateMarkers();
+  }
+
+  Future<void> _refreshCurrentGroupBeforeSheet() async {
+    final currentGroup = _currentGroup;
+    if (currentGroup == null) return;
+
+    try {
+      final backendGroups = await ApiService.getUserBubbles();
+      final matched = backendGroups.where((g) => g.id == currentGroup.id).toList();
+      if (matched.isEmpty) return;
+
+      if (!mounted) return;
+      setState(() {
+        _groups = backendGroups;
+        _currentGroup = matched.first;
+      });
+
+      await GroupStorage.saveGroups(backendGroups);
+      await GroupStorage.saveSelectedGroup(matched.first.id);
+      await _updateMarkers();
+    } catch (_) {
+      // best-effort refresh only
+    }
+  }
+
+  Future<void> _deleteCurrentBubble() async {
+    final group = _currentGroup;
+    if (group == null || group.code == null) return;
+
+    final user = await ApiService.getCurrentUser();
+    if (user == null) return;
+
+    await ApiService.deleteBubble(code: group.code!, adminId: user.id);
+    await _refreshGroupsAfterMutation();
+  }
+
+  Future<void> _leaveCurrentBubble() async {
+    final group = _currentGroup;
+    if (group == null || group.code == null) return;
+
+    final user = await ApiService.getCurrentUser();
+    if (user == null) return;
+
+    await ApiService.leaveBubble(code: group.code!, userId: user.id);
+    await _refreshGroupsAfterMutation();
+  }
+
+  Future<void> _kickMemberFromCurrentBubble(GroupMember member) async {
+    final group = _currentGroup;
+    if (group == null || group.code == null) return;
+
+    final user = await ApiService.getCurrentUser();
+    final memberId = int.tryParse(member.id);
+    if (user == null || memberId == null) return;
+
+    await ApiService.kickBubbleMember(
+      code: group.code!,
+      adminId: user.id,
+      memberUserId: memberId,
+    );
+    await _refreshGroupsAfterMutation(preferredGroupId: group.id);
+  }
+
   Future<void> _goToMyLocation({bool showSnackOnFail = true}) async {
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -1284,7 +1373,9 @@ class _MapScreenState extends State<MapScreen> {
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 onPressed: () {
-                  showModalBottomSheet(
+                  _refreshCurrentGroupBeforeSheet().whenComplete(() {
+                    if (!mounted) return;
+                    showModalBottomSheet(
                     context: context,
                     shape: const RoundedRectangleBorder(
                       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -1298,8 +1389,12 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                         );
                       },
+                      onDeleteBubble: _deleteCurrentBubble,
+                      onLeaveBubble: _leaveCurrentBubble,
+                      onKickMember: _kickMemberFromCurrentBubble,
                     ),
-                  );
+                    );
+                  });
                 },
               )
             ),

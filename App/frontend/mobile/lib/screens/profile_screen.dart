@@ -4,11 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:mobile/widgets/error_dialog.dart';
 import 'dart:convert';
+import 'dart:io';
 
 import '../app/theme_provider.dart';
 import '../app/theme.dart';
 import '../app/auth_provider.dart';
 import 'package:mobile/services/api_service.dart';
+import 'package:mobile/services/profile_image_cache_service.dart';
 import '../widgets/app_snackbar.dart';
 
 // ✅ these are screens you can create (simple placeholders also fine)
@@ -44,6 +46,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   bool notificationEnabled = true;
   bool locationSharing = true;
   bool hasUnreadNotifications = false;
+  String? _localFaceImagePath;
 
   List<Map<String, dynamic>> contacts = [];
 
@@ -227,6 +230,17 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         hasLocalData = true;
         loading = false;
       });
+
+      final syncedLocalPath = await ProfileImageCacheService.syncFromSource(
+        userId: widget.userId,
+        source: faceImage,
+      );
+
+      if (mounted) {
+        setState(() {
+          _localFaceImagePath = syncedLocalPath;
+        });
+      }
 
       if (_anim.status != AnimationStatus.completed) {
         _anim.forward();
@@ -738,11 +752,43 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   Widget _buildProfileAvatar() {
+    if (_localFaceImagePath != null && _localFaceImagePath!.trim().isNotEmpty) {
+      final local = File(_localFaceImagePath!);
+      if (local.existsSync()) {
+        return ClipOval(
+          child: Image.file(
+            local,
+            width: 100,
+            height: 100,
+            fit: BoxFit.cover,
+          ),
+        );
+      }
+    }
+
     if (faceImage.trim().isEmpty) {
       return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
     }
 
     try {
+      if (faceImage.startsWith('/profile_pics/') ||
+          faceImage.startsWith('profile_pics/') ||
+          faceImage.startsWith('http://') ||
+          faceImage.startsWith('https://')) {
+        final resolvedUrl = faceImage.startsWith('http')
+            ? faceImage
+            : '${ApiService.baseUrl}${faceImage.startsWith('/') ? '' : '/'}$faceImage';
+        return ClipOval(
+          child: Image.network(
+            resolvedUrl,
+            width: 100,
+            height: 100,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white, size: 42),
+          ),
+        );
+      }
+
       final bytes = base64Decode(faceImage);
       return ClipOval(
         child: Image.memory(
@@ -1094,6 +1140,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     final prefs = await SharedPreferences.getInstance();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final authUser = authProvider.currentUser;
+    final localPath = await ProfileImageCacheService.getLocalPath(widget.userId);
 
     if (authUser != null && mounted) {
       setState(() {
@@ -1101,6 +1148,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         email = _resolveDisplayEmail(authProvider);
         phone = authUser.phone;
         faceImage = authUser.faceImage;
+        _localFaceImagePath = localPath;
         aadharVerified = authUser.aadharVerified;
         hasLocalData = true;
         loading = false;
@@ -1129,6 +1177,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       email = _resolveDisplayEmail(authProvider, (profileJson["email"] ?? "").toString());
       phone = (profileJson["phone"] ?? "").toString();
       faceImage = (profileJson["face_image"] ?? "").toString();
+      _localFaceImagePath = localPath;
       aadharVerified = profileJson["aadhar_verified"] ?? false;
       isPremium = profileJson["isPremium"] ?? false;
 
@@ -1147,6 +1196,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       hasLocalData = true;
       loading = false; // ✅ stop skeleton if cached is ready
     });
+
+    final syncedLocalPath = await ProfileImageCacheService.syncFromSource(
+      userId: widget.userId,
+      source: faceImage,
+    );
+    if (mounted) {
+      setState(() {
+        _localFaceImagePath = syncedLocalPath;
+      });
+    }
 
     _anim.forward(from: 0);
   }
