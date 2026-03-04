@@ -1,3 +1,4 @@
+# App/backend/services/ai_service.py
 from typing import List
 from utils.logger import logger
 import warnings
@@ -62,7 +63,6 @@ Rules:
 - If user asks anything else except women safety please say, you can't do it, you will only answer for women safety
 """
 
-            # Call Gemini API
             if not self.model:
                 return {
                     "success": False,
@@ -72,7 +72,7 @@ Rules:
             response = self.model.generate_content(prompt)
             text = response.text if response.text else "Unable to generate response"
 
-            # Generate tips based on question keywords
+            # generate tips based on question keywords
             tips = self._generate_tips(question)
 
             if detailed:

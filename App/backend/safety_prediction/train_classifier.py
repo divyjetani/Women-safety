@@ -1,3 +1,4 @@
+# App/backend/safety_prediction/train_classifier.py
 from __future__ import annotations
 
 from pathlib import Path
@@ -60,9 +61,8 @@ def train_and_save() -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, output_path)
 
-    # print(f"Dataset: {dataset_path}")
-    # print(f"Rows: {len(df)}")
-    # print(f"Model saved at: {output_path}")
+    # print(f"dataset: {dataset_path}")
+    # print(f"model saved at: {output_path}")
 
 
 if __name__ == "__main__":

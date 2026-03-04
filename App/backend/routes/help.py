@@ -1,3 +1,4 @@
+# App/backend/routes/help.py
 from fastapi import APIRouter
 from database.collections import get_collections
 

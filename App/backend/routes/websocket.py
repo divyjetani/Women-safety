@@ -1,3 +1,4 @@
+# App/backend/routes/websocket.py
 import json
 import struct
 import asyncio
@@ -15,7 +16,7 @@ from services.text_threat_classifier import TextThreatClassifier
 
 router = APIRouter(tags=["websocket"])
 
-# Keep track of active WebSocket connections for location sharing
+# keep track of active websocket connections for location sharing
 class ConnectionManager:
     def __init__(self):
         self.active_connections: dict = {}  # {bubble_code: [websocket, ...]}
@@ -53,7 +54,7 @@ class ConnectionManager:
                     logger.error(f"Error sending location: {e}")
                     disconnected.append(connection)
             
-            # Remove disconnected connections
+            # remove disconnected connections
             for conn in disconnected:
                 self.disconnect(bubble_code, conn["user_id"])
 
@@ -91,16 +92,30 @@ def _prune_audio_chunks(keep: int = MAX_SAVED_AUDIO_CHUNKS) -> None:
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     """Legacy audio processing WebSocket"""
-    await ws.accept()
-    logger.info("🟢 Client connected to audio WS")
-
     collections = get_collections()
+    users_col = collections["users"]
     audio_analytics_col = collections["audio_session_analytics"]
     session_id = str(uuid4())
     query_user_id = ws.query_params.get("user_id")
     session_user_id = None
     if query_user_id and str(query_user_id).isdigit():
         session_user_id = int(query_user_id)
+
+    if session_user_id is not None:
+        user = await users_col.find_one({"id": session_user_id}, {"_id": 0, "gender": 1})
+        if user and str(user.get("gender", "")).strip().lower() == "male":
+            await ws.accept()
+            await ws.send_json(
+                {
+                    "type": "access_denied",
+                    "detail": "Audio monitoring is not available for male users.",
+                }
+            )
+            await ws.close(code=1008)
+            return
+
+    await ws.accept()
+    logger.info("🟢 Client connected to audio WS")
 
     session_started_at = datetime.utcnow().isoformat()
     confidence_samples: list[float] = []
@@ -171,7 +186,6 @@ async def websocket_endpoint(ws: WebSocket):
             save_wav(filename, chunk)
             _prune_audio_chunks()
 
-            # logger.info(f"💾 Saved chunk | duration={duration:.2f}s")
 
     saver_task = asyncio.create_task(periodic_saver())
 
@@ -302,7 +316,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
         await manager.connect(ws, bubble_code, user_id)
         logger.info(f"🟢 User {user_id} connected to bubble {bubble_code}")
         
-        # Get bubble info from database
+        # get bubble info from database
         collections = get_collections()
         bubbles_col = collections["bubbles"]
         users_col = collections["users"]
@@ -345,7 +359,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
 
         hydrated_members = await _hydrate_members(bubble.get("members", []))
 
-        # Send initial bubble members info
+        # send initial bubble members info
         await ws.send_json({
             "type": "bubble_info",
             "bubble": {
@@ -359,7 +373,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
             data = await ws.receive_json()
             
             if data.get("type") == "location_update":
-                # Update user location in database
+                # update user location in database
                 await bubbles_col.update_one(
                     {"code": bubble_code, "members.user_id": user_id},
                     {
@@ -372,11 +386,9 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
                     }
                 )
                 
-                # Get updated bubble
                 updated_bubble = await bubbles_col.find_one({"code": bubble_code})
                 hydrated_members = await _hydrate_members(updated_bubble.get("members", []))
                 
-                # Broadcast to all members
                 await manager.broadcast_location(bubble_code, {
                     "user_id": user_id,
                     "lat": data.get("lat"),
@@ -385,7 +397,7 @@ async def bubble_location_websocket(ws: WebSocket, bubble_code: str, user_id: in
                     "members": hydrated_members
                 })
                 
-                # Removed verbose logging - too noisy with 5-second updates
+                # removed verbose logging - too noisy with 5-second updates
             
             elif data.get("type") == "ping":
                 await ws.send_json({"type": "pong"})

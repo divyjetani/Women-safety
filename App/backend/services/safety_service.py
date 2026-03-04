@@ -1,3 +1,4 @@
+# App/backend/services/safety_service.py
 import numpy as np
 import pandas as pd
 import joblib
@@ -205,7 +206,7 @@ class SafetyScoreService:
         return haversine_distances(coords1, coords2)[0][0] * EARTH_RADIUS
 
     def get_features_for_location(self, lat: float, lon: float) -> pd.DataFrame:
-        # Find nearest feature row based on crime area distance
+        # find nearest feature row based on crime area distance
         self.df["temp_distance"] = self.df.apply(
             lambda row: self.calculate_distance(
                 lat, lon,

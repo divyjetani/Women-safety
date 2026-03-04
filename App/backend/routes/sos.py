@@ -1,3 +1,4 @@
+# App/backend/routes/sos.py
 import asyncio
 import math
 from datetime import datetime, timedelta
@@ -16,6 +17,7 @@ from schemas.sos import (
 )
 from database.collections import get_collections
 from services.alert_dispatch_service import send_fcm_notifications, send_sms_fallback
+from utils.sos_media import persist_sos_image, persist_sos_audio
 
 router = APIRouter(prefix="/sos", tags=["sos"])
 AUTO_SOS_COUNTDOWN_SECONDS = 13
@@ -61,6 +63,9 @@ async def _dispatch_sos_report(request: SOSRequest) -> dict:
 
     event_id = str(uuid4())
     created_at = datetime.now().isoformat()
+    front_image = persist_sos_image(request.camera_front_image, request.user_id, event_id, "front")
+    back_image = persist_sos_image(request.camera_back_image, request.user_id, event_id, "back")
+    audio_10s_url = persist_sos_audio(request.audio_10s_url, request.user_id, event_id)
 
     contacts = await contacts_col.find({"user_id": request.user_id}, {"_id": 0}).to_list(length=100)
     emergency_numbers = [c.get("phone") for c in contacts if c.get("phone")]
@@ -141,9 +146,9 @@ async def _dispatch_sos_report(request: SOSRequest) -> dict:
         "message": request.message,
         "trigger_type": request.trigger_type,
         "trigger_reason": request.trigger_reason,
-        "camera_front_image": request.camera_front_image,
-        "camera_back_image": request.camera_back_image,
-        "audio_10s_url": request.audio_10s_url,
+        "camera_front_image": front_image,
+        "camera_back_image": back_image,
+        "audio_10s_url": audio_10s_url,
         "bubble_code": request.bubble_code,
         "bubble_members": members_payload,
         "contacts_notified": emergency_numbers,
@@ -254,10 +259,15 @@ async def _dispatch_sos_report(request: SOSRequest) -> dict:
             "cause": request.trigger_reason or request.trigger_type,
             "from_group_member": False,
             "sos_event_id": event_id,
+            "member_name": user.get("username", "You"),
+            "member_phone": user.get("phone", ""),
+            "member_user_id": request.user_id,
             "member_location": request.location,
             "member_battery": request.battery,
-            "member_camera_image": request.camera_front_image or "",
-            "audio_10s_url": request.audio_10s_url or "",
+            "member_camera_image": front_image or back_image or "",
+            "sos_camera_front_image": front_image,
+            "sos_camera_back_image": back_image,
+            "audio_10s_url": audio_10s_url,
         },
     )
 
@@ -276,10 +286,14 @@ async def _dispatch_sos_report(request: SOSRequest) -> dict:
                 "cause": request.trigger_reason or request.trigger_type,
                 "from_group_member": True,
                 "member_name": user.get("username", "Member"),
+                "member_phone": user.get("phone", ""),
+                "member_user_id": request.user_id,
                 "member_location": request.location,
                 "member_battery": request.battery,
-                "member_camera_image": request.camera_front_image or request.camera_back_image or "",
-                "audio_10s_url": request.audio_10s_url or "",
+                "member_camera_image": front_image or back_image or "",
+                "sos_camera_front_image": front_image,
+                "sos_camera_back_image": back_image,
+                "audio_10s_url": audio_10s_url,
                 "sos_event_id": event_id,
             },
         )
@@ -543,14 +557,23 @@ async def get_sos_history(user_id: int):
 async def update_sos_media(event_id: str, body: SOSMediaUpdateRequest):
     collections = get_collections()
     sos_events_col = collections["sos_events"]
+    sos_reports_col = collections["sos_reports"]
+    notifs_col = collections["notifications"]
+
+    front_image = None
+    back_image = None
+    audio_10s_url = None
 
     update_fields = {}
     if body.camera_front_image is not None:
-        update_fields["camera_front_image"] = body.camera_front_image
+        front_image = persist_sos_image(body.camera_front_image, body.user_id, event_id, "front")
+        update_fields["camera_front_image"] = front_image
     if body.camera_back_image is not None:
-        update_fields["camera_back_image"] = body.camera_back_image
+        back_image = persist_sos_image(body.camera_back_image, body.user_id, event_id, "back")
+        update_fields["camera_back_image"] = back_image
     if body.audio_10s_url is not None:
-        update_fields["audio_10s_url"] = body.audio_10s_url
+        audio_10s_url = persist_sos_audio(body.audio_10s_url, body.user_id, event_id)
+        update_fields["audio_10s_url"] = audio_10s_url
 
     if not update_fields:
         raise HTTPException(status_code=400, detail="No media fields provided")
@@ -563,5 +586,29 @@ async def update_sos_media(event_id: str, body: SOSMediaUpdateRequest):
     )
     if res.matched_count == 0:
         raise HTTPException(status_code=404, detail="SOS event not found")
+
+    await sos_reports_col.update_one(
+        {"id": event_id, "user_id": body.user_id},
+        {"$set": update_fields},
+    )
+
+    preferred_image = (front_image if front_image is not None else "") or (back_image if back_image is not None else "")
+    if preferred_image or audio_10s_url is not None:
+        notif_updates = {}
+        if preferred_image:
+            notif_updates["notifications.$[item].member_camera_image"] = preferred_image
+        if front_image is not None:
+            notif_updates["notifications.$[item].sos_camera_front_image"] = front_image
+        if back_image is not None:
+            notif_updates["notifications.$[item].sos_camera_back_image"] = back_image
+        if audio_10s_url is not None:
+            notif_updates["notifications.$[item].audio_10s_url"] = audio_10s_url
+
+        if notif_updates:
+            await notifs_col.update_many(
+                {"notifications.sos_event_id": event_id},
+                {"$set": notif_updates},
+                array_filters=[{"item.sos_event_id": event_id}],
+            )
 
     return {"success": True, "message": "SOS media updated"}

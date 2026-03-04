@@ -1,8 +1,9 @@
+# App/backend/database/db.py
 from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
 from config.settings import MONGO_URL, DATABASE_NAME
 
-mongo_client: AsyncIOMotorClient = None
+mongo_client = None
 db = None
 
 
@@ -25,18 +26,9 @@ def get_db():
 
 @asynccontextmanager
 async def lifespan_manager(app):
-    """
-    Lifespan context manager for FastAPI app.
-    Controls startup and shutdown of database connections and seeding.
-    """
-    # Startup
+    """Lifespan context manager for FastAPI app."""
     await connect_db()
-    
-    # Seed database if collections are empty
-    from database.seed import seed_database
-    await seed_database(db)
     
     yield
     
-    # Shutdown
     await close_db()

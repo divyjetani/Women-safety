@@ -1,3 +1,4 @@
+# App/backend/routes/notifications.py
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from database.collections import get_collections

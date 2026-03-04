@@ -1,3 +1,4 @@
+# App/backend/database/seed.py
 import os
 import sys
 CURRENT_DIR = os.path.dirname(__file__)
@@ -24,15 +25,15 @@ async def seed_database(db):
     default_users = [
         {
             "id": 1,
-            "username": "Sarah",
-            "email": "sarah@email.com",
-            "phone": "+1234567890",
-            "password_hash": pwd_context.hash("Sarah@123"),
+            "username": "Divy",
+            "email": "divy@email.com",
+            "phone": "+91 1234567890",
+            "password_hash": pwd_context.hash("123456"),
             "gender": "female",
             "birthdate": "2001-05-14",
             "face_image": "",
             "aadhar_verified": True,
-            "emergency_contacts": ["+1234567891", "+1234567892"],
+            "emergency_contacts": ["+91 1234567891", "+91 1234567892"],
             "fcm_tokens": [],
             "is_premium": True,
             "stats": {"safeDays": 128, "sosUsed": 12, "checkins": 45, "guardians": 8},
@@ -40,15 +41,15 @@ async def seed_database(db):
         },
         {
             "id": 2,
-            "username": "John",
-            "email": "john@email.com",
-            "phone": "+1234567893",
-            "password_hash": pwd_context.hash("John@123"),
+            "username": "Divy2",
+            "email": "divy2@email.com",
+            "phone": "+91 1234567893",
+            "password_hash": pwd_context.hash("123456"),
             "gender": "male",
             "birthdate": "1999-11-02",
             "face_image": "",
             "aadhar_verified": False,
-            "emergency_contacts": ["+1234567894"],
+            "emergency_contacts": ["+91 1234567894"],
             "fcm_tokens": [],
             "is_premium": False,
             "stats": {"safeDays": 74, "sosUsed": 0, "checkins": 14, "guardians": 3},

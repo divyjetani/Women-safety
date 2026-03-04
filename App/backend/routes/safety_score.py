@@ -1,3 +1,4 @@
+# App/backend/routes/safety_score.py
 from datetime import datetime
 from fastapi import APIRouter, Query
 from schemas.common import LocationRequest

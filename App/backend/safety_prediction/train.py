@@ -1,56 +1,36 @@
-# import pandas as pd
-# from sklearn.ensemble import RandomForestRegressor
-# from sklearn.preprocessing import LabelEncoder
+# App/backend/safety_prediction/train.py
+# from sklearn.ensemble import randomforestregressor
+# from sklearn.preprocessing import labelencoder
 # from sklearn.metrics import mean_squared_error
-# import joblib
 
-# # Load Excel file
-# df = pd.read_excel("C:/Users/divyj/Desktop/study/Capstone_Project/App/data/data 1.xlsx")
+# df = pd.read_excel("c:/users/divyj/desktop/study/capstone_project/app/data/data 1.xlsx")
 
-# # Drop non-numeric / non-useful columns
-# df = df.drop(columns=[
-#     "Area",
-#     "Police_Station"
-# ])
+# # drop non-numeric / non-useful columns
 
-# # Encode categorical columns
-# categorical_cols = [
-#     "Lighting",
-#     "Crowd_Density",
-#     "Late_Night_Activity",
-#     "Public_Transport",
-#     "CCTV_Coverage"
-# ]
+# # encode categorical columns
 
-# encoders = {}
 
 # for col in categorical_cols:
-#     le = LabelEncoder()
-#     df[col] = le.fit_transform(df[col])
-#     encoders[col] = le
+# df[col] = le.fit_transform(df[col])
 
-# # Define features and target
-# X = df.drop(columns=["Risk_Score", "Risk_Level"])
-# y = df["Risk_Score"]
+# # define features and target
+# x = df.drop(columns=["risk_score", "risk_level"])
 
-# # Since dataset is tiny, DO NOT split (splitting is meaningless here)
-# model = RandomForestRegressor(n_estimators=200, random_state=42)
-# model.fit(X, y)
+# # since dataset is tiny, do not split (splitting is meaningless here)
+# model = randomforestregressor(n_estimators=200, random_state=42)
 
-# # Evaluate on training data (only because dataset is tiny)
-# predictions = model.predict(X)
+# # evaluate on training data (only because dataset is tiny)
+# predictions = model.predict(x)
 # mse = mean_squared_error(y, predictions)
 
-# print("Model trained successfully")
-# print("Training MSE:", mse)
+# print("model trained successfully")
 
-# # Save model + encoders + feature order
-# joblib.dump(model, "C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/safety_model.pkl")
-# joblib.dump(encoders, "C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/encoders.pkl")
-# joblib.dump(X.columns.tolist(), "C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/feature_order.pkl")
+# # save model + encoders + feature order
+# joblib.dump(model, "c:/users/divyj/desktop/study/capstone_project/app/backend/models/safety_model.pkl")
+# joblib.dump(encoders, "c:/users/divyj/desktop/study/capstone_project/app/backend/models/encoders.pkl")
+# joblib.dump(x.columns.tolist(), "c:/users/divyj/desktop/study/capstone_project/app/backend/models/feature_order.pkl")
 
 
-# train 2
 import pandas as pd
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
@@ -61,10 +41,8 @@ from math import radians
 from sklearn.metrics.pairwise import haversine_distances
 from sklearn.ensemble import GradientBoostingRegressor
 
-# Load raw geo feature data
 df = pd.read_csv("C:/Users/divyj/Desktop/study/Capstone_Project/App/data/data 2.csv")
 
-# Earth radius
 EARTH_RADIUS = 6371  # km
 
 
@@ -74,12 +52,11 @@ def calculate_distance(lat1, lon1, lat2, lon2):
     return haversine_distances(coords1, coords2)[0][0] * EARTH_RADIUS
 
 
-# Generate synthetic training points
+# generate synthetic training points
 training_rows = []
 
 for _, row in df.iterrows():
     for _ in range(20):  # generate 5 samples per row
-        # random nearby point
         lat = row["crime_area_lat"] + np.random.uniform(-0.01, 0.01)
         lon = row["crime_area_lon"] + np.random.uniform(-0.01, 0.01)
 
@@ -90,7 +67,7 @@ for _, row in df.iterrows():
         dist_cctv = calculate_distance(lat, lon, row["cctv_coverage_lat"], row["cctv_coverage_lon"])
         dist_lighting = calculate_distance(lat, lon, row["lighting_condition_lat"], row["lighting_condition_lon"])
 
-        # Safety logic formula (important)
+        # safety logic formula (important)
         safety_score = (
             50
             - row["crime_rate_score"] * 5

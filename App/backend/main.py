@@ -1,3 +1,4 @@
+# App/backend/main.py
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from database.db import lifespan_manager
@@ -5,6 +6,7 @@ from middleware.cors import add_cors_middleware
 from services.whisper_client import prewarm_whisper_runtime
 from utils.logger import logger
 from utils.profile_image import PROFILE_PICS_DIR
+from config.settings import SOS_MEDIA_DIR, AUDIO_CHUNKS_DIR, ANONYMOUS_RECORDINGS_DIR, FAKECALL_RECORDINGS_DIR
 
 prewarm_whisper_runtime()
 
@@ -34,13 +36,15 @@ app = FastAPI(
     lifespan=lifespan_manager,
 )
 
-# cors middleware
 add_cors_middleware(app)
 
 # static files for stored profile images
 app.mount("/profile_pics", StaticFiles(directory=str(PROFILE_PICS_DIR)), name="profile_pics")
+app.mount("/sos_media", StaticFiles(directory=str(SOS_MEDIA_DIR)), name="sos_media")
+app.mount("/audio_chunks", StaticFiles(directory=str(AUDIO_CHUNKS_DIR)), name="audio_chunks")
+app.mount("/anonymous_recordings", StaticFiles(directory=str(ANONYMOUS_RECORDINGS_DIR)), name="anonymous_recordings")
+app.mount("/fakecall_recordings", StaticFiles(directory=str(FAKECALL_RECORDINGS_DIR)), name="fakecall_recordings")
 
-# api health check
 @app.get("/", tags=["health"])
 def read_root():
     logger.info("Health check request")
@@ -50,7 +54,6 @@ def read_root():
         "status": "healthy"
     }
 
-# Register all routes
 app.include_router(auth.router)
 app.include_router(sos.router)
 app.include_router(profile.router)

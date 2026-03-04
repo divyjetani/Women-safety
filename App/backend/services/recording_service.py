@@ -1,3 +1,4 @@
+# App/backend/services/recording_service.py
 import json
 import shutil
 from pathlib import Path
@@ -24,7 +25,6 @@ class RecordingService:
             logger.error(f"❌ Error saving file {destination}: {e}")
             raise HTTPException(status_code=500, detail=f"File save failed: {e}")
 
-    # update json on log
     @staticmethod
     def update_json_log(log_file: Path, record: dict) -> None:
         try:
@@ -38,6 +38,68 @@ class RecordingService:
         except Exception as e:
             logger.error(f"❌ Error updating log {log_file}: {e}")
             raise HTTPException(status_code=500, detail=f"Log update failed: {e}")
+
+    @staticmethod
+    def _extract_filename(path_value: str) -> str:
+        raw = (path_value or "").strip()
+        if not raw:
+            return ""
+        normalized = raw.replace("\\", "/")
+        return normalized.split("/")[-1]
+
+    @staticmethod
+    def delete_recording_from_log(
+        *,
+        log_file: Path,
+        media_dir: Path,
+        user_id: int,
+        recording_id: str,
+        file_keys: list[str],
+    ) -> dict:
+        try:
+            if not log_file.exists():
+                raise HTTPException(status_code=404, detail="Recording log not found")
+
+            raw_data = json.loads(log_file.read_text(encoding="utf-8"))
+            if not isinstance(raw_data, list):
+                raw_data = []
+
+            target_record = None
+            updated_data = []
+            for entry in raw_data:
+                if not isinstance(entry, dict):
+                    continue
+
+                if str(entry.get("id", "")) == recording_id and int(entry.get("user_id", -1)) == user_id:
+                    target_record = entry
+                    continue
+                updated_data.append(entry)
+
+            if target_record is None:
+                raise HTTPException(status_code=404, detail="Recording not found")
+
+            deleted_files = 0
+            files = target_record.get("files") or {}
+            for file_key in file_keys:
+                filename = RecordingService._extract_filename(str(files.get(file_key, "")))
+                if not filename:
+                    continue
+                file_path = media_dir / filename
+                if file_path.exists() and file_path.is_file():
+                    file_path.unlink(missing_ok=True)
+                    deleted_files += 1
+
+            log_file.write_text(json.dumps(updated_data, indent=2), encoding="utf-8")
+
+            return {
+                "recording_id": recording_id,
+                "deleted_files": deleted_files,
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error deleting recording {recording_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
 
 class AnonymousRecordingService(RecordingService):
@@ -61,23 +123,19 @@ class AnonymousRecordingService(RecordingService):
         now = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = f"user{user_id}_{now}"
 
-        # Define file paths
         front_path = ANONYMOUS_RECORDINGS_DIR / f"{unique_id}_front.mp4"
         back_path = ANONYMOUS_RECORDINGS_DIR / f"{unique_id}_back.mp4"
         start_img_path = ANONYMOUS_RECORDINGS_DIR / f"{unique_id}_start.jpg"
         end_img_path = ANONYMOUS_RECORDINGS_DIR / f"{unique_id}_end.jpg"
 
-        # Save required files
         await RecordingService.save_uploaded_file(front_video, front_path)
         await RecordingService.save_uploaded_file(back_video, back_path)
 
-        # Save optional images
         if start_image is not None:
             await RecordingService.save_uploaded_file(start_image, start_img_path)
         if end_image is not None:
             await RecordingService.save_uploaded_file(end_image, end_img_path)
 
-        # Create metadata record
         new_record = {
             "id": unique_id,
             "user_id": user_id,
@@ -95,11 +153,21 @@ class AnonymousRecordingService(RecordingService):
             "uploaded_at": datetime.now().isoformat(),
         }
 
-        # Update JSON log
         log_file = ANONYMOUS_RECORDINGS_DIR / "anonymous_log.json"
         RecordingService.update_json_log(log_file, new_record)
 
         return new_record
+
+    @staticmethod
+    def delete_anonymous_recording(user_id: int, recording_id: str) -> dict:
+        log_file = ANONYMOUS_RECORDINGS_DIR / "anonymous_log.json"
+        return RecordingService.delete_recording_from_log(
+            log_file=log_file,
+            media_dir=ANONYMOUS_RECORDINGS_DIR,
+            user_id=user_id,
+            recording_id=recording_id,
+            file_keys=["front_video", "back_video", "start_image", "end_image"],
+        )
 
 
 class FakecallRecordingService(RecordingService):
@@ -122,21 +190,17 @@ class FakecallRecordingService(RecordingService):
         now = datetime.now().strftime("%Y%m%d_%H%M%S")
         unique_id = f"user{user_id}_{now}"
 
-        # Define file paths
         video_path = FAKECALL_RECORDINGS_DIR / f"{unique_id}_back.mp4"
         start_img_path = FAKECALL_RECORDINGS_DIR / f"{unique_id}_start.jpg"
         end_img_path = FAKECALL_RECORDINGS_DIR / f"{unique_id}_end.jpg"
 
-        # Save required file
         await RecordingService.save_uploaded_file(back_video, video_path)
 
-        # Save optional images
         if start_image is not None:
             await RecordingService.save_uploaded_file(start_image, start_img_path)
         if end_image is not None:
             await RecordingService.save_uploaded_file(end_image, end_img_path)
 
-        # Create metadata record
         new_record = {
             "id": unique_id,
             "user_id": user_id,
@@ -153,8 +217,18 @@ class FakecallRecordingService(RecordingService):
             "uploaded_at": datetime.now().isoformat(),
         }
 
-        # Update JSON log
         log_file = FAKECALL_RECORDINGS_DIR / "recordings_log.json"
         RecordingService.update_json_log(log_file, new_record)
 
         return new_record
+
+    @staticmethod
+    def delete_fakecall_recording(user_id: int, recording_id: str) -> dict:
+        log_file = FAKECALL_RECORDINGS_DIR / "recordings_log.json"
+        return RecordingService.delete_recording_from_log(
+            log_file=log_file,
+            media_dir=FAKECALL_RECORDINGS_DIR,
+            user_id=user_id,
+            recording_id=recording_id,
+            file_keys=["back_video", "start_image", "end_image"],
+        )

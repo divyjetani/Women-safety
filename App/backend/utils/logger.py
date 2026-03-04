@@ -1,7 +1,7 @@
+# App/backend/utils/logger.py
 import logging
 import sys
 
-# setup logger
 def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logging.basicConfig(
         level=level,
@@ -14,5 +14,4 @@ def setup_logger(name: str, level: int = logging.INFO) -> logging.Logger:
     logger.propagate = True
     return logger
 
-# Main app logger
 logger = setup_logger("she_safe_backend")

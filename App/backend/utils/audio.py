@@ -1,3 +1,4 @@
+# App/backend/utils/audio.py
 import wave
 import struct
 from pathlib import Path
@@ -5,7 +6,6 @@ from typing import List
 from utils.logger import logger
 from config.settings import AUDIO_CONFIG
 
-# save audio
 def save_wav(path: str, samples: List[int]) -> None:
     if not samples:
         logger.warning(f"No samples to save for: {path}")
@@ -28,6 +28,5 @@ def save_wav(path: str, samples: List[int]) -> None:
     except Exception as e:
         logger.error(f"❌ Error saving WAV {path}: {e}")
 
-# calc duration of audio
 def calculate_duration(sample_count: int) -> float:
     return sample_count / AUDIO_CONFIG["SAMPLE_RATE"]

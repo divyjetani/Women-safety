@@ -1,3 +1,4 @@
+# App/backend/routes/bubble.py
 from fastapi import APIRouter, HTTPException
 from schemas.group import CreateBubbleReq, JoinBubbleReq, ShareReq
 from database.collections import get_collections
@@ -98,7 +99,7 @@ async def join_bubble(req: JoinBubbleReq):
     if not bubble:
         raise HTTPException(status_code=404, detail="Invalid bubble code")
     
-    # Check if user already member
+    # check if user already member
     if any(m.get("user_id") == req.user_id for m in bubble.get("members", [])):
         bubble.pop("_id", None)
         return {
@@ -107,7 +108,6 @@ async def join_bubble(req: JoinBubbleReq):
             "message": "Already a member of this bubble"
         }
     
-    # Add member to bubble
     member_name = await _resolve_user_display_name(users_col, req.user_id, fallback=req.name)
     member = {
         "user_id": req.user_id, 
@@ -171,13 +171,13 @@ async def share_location(req: ShareReq):
     collections = get_collections()
     bubbles_col = collections["bubbles"]
     
-    # Find all bubbles where this user is a member
+    # find all bubbles where this user is a member
     bubbles = await bubbles_col.find(
         {"members.user_id": req.user_id}
     ).to_list(length=100)
     
     if not bubbles:
-        # Silently succeed if user not in any bubble yet
+        # silently succeed if user not in any bubble yet
         return {
             "success": True,
             "message": "No bubbles to update",
@@ -186,7 +186,7 @@ async def share_location(req: ShareReq):
     
     updated_bubbles = []
     for bubble in bubbles:
-        # Update member location in each bubble
+        # update member location in each bubble
         await bubbles_col.update_one(
             {"_id": bubble["_id"], "members.user_id": req.user_id},
             {

@@ -1,3 +1,4 @@
+# App/backend/utils/profile_image.py
 import base64
 import binascii
 from pathlib import Path

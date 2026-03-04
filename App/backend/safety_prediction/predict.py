@@ -1,3 +1,4 @@
+# App/backend/safety_prediction/predict.py
 import joblib
 import pandas as pd
 
@@ -9,11 +10,10 @@ def predict_safety(data_dict):
 
     df = pd.DataFrame([data_dict])
 
-    # Encode categorical columns
     for col, encoder in encoders.items():
         df[col] = encoder.transform(df[col])
 
-    # Ensure correct feature order
+    # ensure correct feature order
     df = df[feature_order]
 
     prediction = model.predict(df)[0]
@@ -21,7 +21,6 @@ def predict_safety(data_dict):
     return round(float(prediction), 2)
 
 
-# Example usage
 if __name__ == "__main__":
 
     sample = {
