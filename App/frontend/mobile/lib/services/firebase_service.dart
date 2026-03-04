@@ -1,4 +1,4 @@
-// services/firebase_service.dart
+// App/frontend/mobile/lib/services/firebase_service.dart
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -10,10 +10,8 @@ class FirebaseNotificationService {
   FlutterLocalNotificationsPlugin();
 
   static Future<void> initialize() async {
-    // Initialize Firebase
     await Firebase.initializeApp();
 
-    // Request permission
     NotificationSettings settings = await _firebaseMessaging.requestPermission(
       alert: true,
       badge: true,
@@ -23,7 +21,6 @@ class FirebaseNotificationService {
 
     print('User granted permission: ${settings.authorizationStatus}');
 
-    // Get token
     String? token = await _firebaseMessaging.getToken();
     print('FCM Token: $token');
     await _registerTokenIfPossible(token);
@@ -32,16 +29,16 @@ class FirebaseNotificationService {
       await _registerTokenIfPossible(newToken);
     });
 
-    // Initialize local notifications
+    // initialize local notifications
     await _initializeLocalNotifications();
 
-    // Setup foreground message handling
+    // setup foreground message handling
     FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
-    // Setup background message handling
+    // setup background message handling
     FirebaseMessaging.onMessageOpenedApp.listen(_handleBackgroundMessageOpened);
 
-    // Handle when app is terminated
+    // handle when app is terminated
     RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
     if (initialMessage != null) {
       _handleBackgroundMessageOpened(initialMessage);
@@ -68,7 +65,7 @@ class FirebaseNotificationService {
       initializationSettings,
     );
 
-    // Create notification channel for Android
+    // create notification channel for android
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'high_importance_channel',
       'High Importance Notifications',
@@ -101,8 +98,8 @@ class FirebaseNotificationService {
     print('Message opened from background/terminated state!');
     print('Message data: ${message.data}');
 
-    // Navigate to appropriate screen based on message
-    // You can use GetX, Navigator, or any state management here
+    // navigate to appropriate screen based on message
+    // you can use getx, navigator, or any state management here
   }
 
   static Future<void> _showLocalNotification(RemoteMessage message) async {
@@ -147,7 +144,7 @@ class FirebaseNotificationService {
         token: token,
       );
     } catch (_) {
-      // Silent: app should continue even if token registration fails.
+      // silent: app should continue even if token registration fails.
     }
   }
 

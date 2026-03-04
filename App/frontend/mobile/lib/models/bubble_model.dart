@@ -1,4 +1,4 @@
-// lib/models/bubble_model.dart
+// App/frontend/mobile/lib/models/bubble_model.dart
 
 class BubbleMember {
   final int userId;
@@ -19,7 +19,6 @@ class BubbleMember {
     this.lastUpdated,
   });
 
-  // ✅ JSON for member
   Map<String, dynamic> toJson() => {
     "user_id": userId,
     "name": name,
@@ -81,7 +80,6 @@ class GroupMember {
     this.incognito = false,
   });
 
-  // ✅ JSON for member
   Map<String, dynamic> toJson() => {
     "id": id,
     "name": name,
@@ -139,7 +137,7 @@ class SafetyGroup {
     this.code,
   });
 
-  // ✅ JSON for group (THIS IS STEP 5)
+  // ✅ json for group (this is step 5)
   Map<String, dynamic> toJson() => {
     "id": id,
     "name": name,
@@ -173,7 +171,7 @@ class SafetyGroup {
   }
 }
 
-// ✅ BUBBLE MODEL - With 6-digit code for joining
+//  bubble model - with 6-digit code for joining
 class Bubble {
   final String code; // 6-digit invite code
   final String name;

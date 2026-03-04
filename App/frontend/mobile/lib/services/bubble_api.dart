@@ -1,4 +1,4 @@
-// lib/services/bubble_api.dart
+// App/frontend/mobile/lib/services/bubble_api.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,7 +9,6 @@ class BubbleAPI {
   static const String baseUrl = ApiUrls.baseUrl;
   static const Duration _timeout = Duration(seconds: 10);
 
-  // ✅ Get auth headers
   static Future<Map<String, String>> _headers({bool withAuth = false}) async {
     final headers = <String, String>{
       'Content-Type': 'application/json',
@@ -26,7 +25,7 @@ class BubbleAPI {
     return headers;
   }
 
-  // ✅ CREATE BUBBLE - 6-digit code generation
+  // ✅ create bubble - 6-digit code generation
   static Future<Bubble> createBubble({
     required String name,
     required int icon,
@@ -59,7 +58,7 @@ class BubbleAPI {
     }
   }
 
-  // ✅ JOIN BUBBLE - Enter 6-digit code
+  // ✅ join bubble - enter 6-digit code
   static Future<Bubble> joinBubble({
     required String code,
     required int userId,
@@ -90,7 +89,6 @@ class BubbleAPI {
     }
   }
 
-  // ✅ GET BUBBLE DETAILS
   static Future<Bubble> getBubble(String code) async {
     try {
       final headers = await _headers();
@@ -112,7 +110,6 @@ class BubbleAPI {
     }
   }
 
-  // ✅ GET ALL BUBBLES FOR USER
   static Future<List<Bubble>> getUserBubbles(int userId) async {
     try {
       final headers = await _headers();
@@ -135,7 +132,6 @@ class BubbleAPI {
     }
   }
 
-  // ✅ SHARE LOCATION TO BUBBLE
   static Future<void> shareLocation({
     required int userId,
     required double lat,
@@ -165,7 +161,7 @@ class BubbleAPI {
     }
   }
 
-  // ✅ DELETE BUBBLE (admin only)
+  // ✅ delete bubble (admin only)
   static Future<void> deleteBubble({
     required String code,
     required int adminId,

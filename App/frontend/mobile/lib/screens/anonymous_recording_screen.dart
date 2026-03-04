@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/anonymous_recording_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -21,24 +22,18 @@ class AnonymousRecordingScreen extends StatefulWidget {
 }
 
 class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
-  // ✅ Saved list
   List<Map<String, dynamic>> _recordings = [];
+  bool _isSyncingRemote = false;
 
-  // ✅ recording state
   bool _isRecording = false;
+  bool _isStoppingRecording = false;
   int _seconds = 0;
   Timer? _timer;
 
-  // ✅ cameras
   CameraController? _frontCam;
   CameraController? _backCam;
   bool _camsReady = false;
 
-  // ✅ video file paths
-  String _frontVideoPath = "";
-  String _backVideoPath = "";
-
-  // ✅ images + location
   String _startImagePath = "";
   String _endImagePath = "";
   bool _frontRecordingStarted = false;
@@ -52,8 +47,13 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
   @override
   void initState() {
     super.initState();
-    _loadRecordings();
+    _initData();
     _initCameras();
+  }
+
+  Future<void> _initData() async {
+    await _loadRecordings();
+    await _syncRecordingsFromBackend();
   }
 
   @override
@@ -64,9 +64,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     super.dispose();
   }
 
-  // ===========================
-  // ✅ LOAD/SAVE LIST
-  // ===========================
   Future<void> _loadRecordings() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString("anonymous_recordings_list") ?? "[]";
@@ -82,9 +79,129 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     await prefs.setString("anonymous_recordings_list", jsonEncode(_recordings));
   }
 
-  // ===========================
-  // ✅ CAMERA INIT
-  // ===========================
+  Future<String> _cacheRemoteFile({
+    required String url,
+    required String folderName,
+    required String fallbackFileName,
+  }) async {
+    if (url.trim().isEmpty) return "";
+
+    try {
+      final uri = Uri.parse(url);
+      final candidateName = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : fallbackFileName;
+      final fileName = candidateName.isEmpty ? fallbackFileName : candidateName;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final folder = Directory("${dir.path}/$folderName");
+      if (!await folder.exists()) {
+        await folder.create(recursive: true);
+      }
+
+      final outPath = "${folder.path}/$fileName";
+      final outFile = File(outPath);
+      if (await outFile.exists()) return outPath;
+
+      final bytes = await ApiService.downloadMediaBytes(url);
+      await outFile.writeAsBytes(bytes, flush: true);
+      return outPath;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  Future<void> _syncRecordingsFromBackend() async {
+    if (_isSyncingRemote) return;
+
+    setState(() => _isSyncingRemote = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt("cached_user_id") ?? 1;
+
+      final history = await ApiService.fetchAnonymousRecordingHistory(userId: userId);
+      final List<Map<String, dynamic>> synced = [];
+
+      for (final item in history) {
+        final id = (item["id"] ?? DateTime.now().millisecondsSinceEpoch).toString();
+        final files = Map<String, dynamic>.from(item["files"] ?? {});
+
+        final frontMeta = Map<String, dynamic>.from(files["front_video"] ?? {});
+        final backMeta = Map<String, dynamic>.from(files["back_video"] ?? {});
+        final startMeta = Map<String, dynamic>.from(files["start_image"] ?? {});
+        final endMeta = Map<String, dynamic>.from(files["end_image"] ?? {});
+
+        String frontLocal = await _cacheRemoteFile(
+          url: (frontMeta["url"] ?? "").toString(),
+          folderName: "anonymous_videos_cache",
+          fallbackFileName: "${id}_front.mp4",
+        );
+
+        String backLocal = await _cacheRemoteFile(
+          url: (backMeta["url"] ?? "").toString(),
+          folderName: "anonymous_videos_cache",
+          fallbackFileName: "${id}_back.mp4",
+        );
+
+        final startLocal = await _cacheRemoteFile(
+          url: (startMeta["url"] ?? "").toString(),
+          folderName: "anonymous_images_cache",
+          fallbackFileName: "${id}_start.jpg",
+        );
+
+        final endLocal = await _cacheRemoteFile(
+          url: (endMeta["url"] ?? "").toString(),
+          folderName: "anonymous_images_cache",
+          fallbackFileName: "${id}_end.jpg",
+        );
+
+        if (frontLocal.isEmpty && backLocal.isNotEmpty) {
+          frontLocal = backLocal;
+        }
+        if (backLocal.isEmpty && frontLocal.isNotEmpty) {
+          backLocal = frontLocal;
+        }
+
+        final hasAnyVideo = frontLocal.isNotEmpty || backLocal.isNotEmpty;
+
+        synced.add({
+          "id": id,
+          "serverRecordingId": id,
+          "startedAt": item["started_at"] ?? "",
+          "endedAt": item["ended_at"] ?? "",
+          "duration": item["duration_seconds"] ?? 0,
+          "frontVideoPath": frontLocal,
+          "backVideoPath": backLocal,
+          "startImagePath": startLocal,
+          "endImagePath": endLocal,
+          "startLat": (item["start_location"]?['lat'] ?? "").toString(),
+          "startLng": (item["start_location"]?['lng'] ?? "").toString(),
+          "endLat": (item["end_location"]?['lat'] ?? "").toString(),
+          "endLng": (item["end_location"]?['lng'] ?? "").toString(),
+          "uploadStatus": hasAnyVideo ? "uploaded" : "failed",
+          "lastError": hasAnyVideo ? "" : "Recording details found, but video file is missing on server.",
+          "source": "remote",
+        });
+      }
+
+      final localPending = _recordings.where((r) {
+        final status = (r["uploadStatus"] ?? "").toString();
+        final source = (r["source"] ?? "local").toString();
+        return source != "remote" && status != "uploaded";
+      }).toList();
+
+      final merged = <Map<String, dynamic>>[...synced, ...localPending];
+
+      if (!mounted) return;
+      setState(() => _recordings = merged);
+      await _saveRecordings();
+    } catch (_) {
+      // keep cached local records if sync fails
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingRemote = false);
+      }
+    }
+  }
+
   Future<void> _initCameras() async {
     try {
       final cams = await availableCameras();
@@ -126,9 +243,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     }
   }
 
-  // ===========================
-  // ✅ LOCATION HELPERS
-  // ===========================
   Future<Position?> _getLocation() async {
     try {
       if (!await Geolocator.isLocationServiceEnabled()) return null;
@@ -143,9 +257,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     }
   }
 
-  // ===========================
-  // ✅ CAPTURE IMAGE (use back cam)
-  // ===========================
+  // ✅ capture image (use back cam)
   Future<String> _captureImage(String name) async {
     try {
       if (_backCam == null || !_backCam!.value.isInitialized) return "";
@@ -162,9 +274,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     }
   }
 
-  // ===========================
-  // ✅ START / STOP RECORDING
-  // ===========================
   void _startTimer() {
     _timer?.cancel();
     _seconds = 0;
@@ -179,18 +288,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     AppSnackBar.show(context, msg);
   }
 
-  void _startTimerFresh() {
-    _timer?.cancel();
-    _seconds = 0;
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _seconds++);
-    });
-  }
-
   Future<void> _startRecording() async {
-    _startTimerFresh();
-
     if (_frontCam?.value.isRecordingVideo == true || _backCam?.value.isRecordingVideo == true) {
       _showSnack("Already recording...");
       return;
@@ -211,9 +309,8 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       _startPos = await _getLocation();
       _startImagePath = await _captureImage("start_${DateTime.now().millisecondsSinceEpoch}");
 
-      // ✅ Start both
-      // await _frontCam!.prepareForVideoRecording();
-      // await _backCam!.prepareForVideoRecording();
+      // await _frontcam!.prepareforvideorecording();
+      // await _backcam!.prepareforvideorecording();
 
       try {
         if (_frontCam != null && _frontCam!.value.isInitialized) {
@@ -239,6 +336,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         return;
       }
 
+      _seconds = 0;
       _startTimer();
     } catch (e) {
       setState(() => _isRecording = false);
@@ -247,7 +345,8 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
   }
 
   Future<void> _stopRecording() async {
-    if (!_isRecording) return;
+    if (!_isRecording || _isStoppingRecording) return;
+    setState(() => _isStoppingRecording = true);
 
     try {
       _timer?.cancel();
@@ -263,7 +362,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       XFile? frontFile;
       XFile? backFile;
 
-      // ✅ stop safely
       try {
         if (_frontCam != null && _frontRecordingStarted) {
           frontFile = await _frontCam!.stopVideoRecording();
@@ -289,7 +387,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       }
 
 
-      // ✅ copy to app storage
       final dir = await getApplicationDocumentsDirectory();
       final folder = Directory("${dir.path}/anonymous_videos");
       if (!await folder.exists()) await folder.create(recursive: true);
@@ -299,13 +396,11 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       String frontSaved = "";
       String backSaved = "";
 
-      // ✅ save front if exists
       if (frontFile != null) {
         frontSaved = "${folder.path}/front_$id.mp4";
         await File(frontFile.path).copy(frontSaved);
       }
 
-      // ✅ save back if exists
       if (backFile != null) {
         backSaved = "${folder.path}/back_$id.mp4";
         await File(backFile.path).copy(backSaved);
@@ -328,7 +423,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         return;
       }
 
-      // ✅ Create object
       final recordingObj = {
         "id": id,
         "startedAt": _startedAt,
@@ -350,7 +444,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         "lastError": "",
       };
 
-      // ✅ Insert into list and save prefs
+      // ✅ insert into list and save prefs
       setState(() {
         _recordings.insert(0, recordingObj);
       });
@@ -358,12 +452,16 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
 
       _showSnack("Recording saved locally ✅");
 
-      // ✅ Upload (if only back exists, upload only back)
+      // ✅ upload (if only back exists, upload only back)
       await _uploadRecording(recordingObj);
 
     } catch (e) {
       debugPrint("STOP RECORDING ERROR: $e");
       _showSnack("Stop error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isStoppingRecording = false);
+      }
     }
 
     await _reInitCamerasAfterRecording();
@@ -429,9 +527,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
   }
 
 
-  // ===========================
-  // ✅ UPLOAD + RETRY
-  // ===========================
   Future<void> _uploadRecording(Map<String, dynamic> item) async {
     final idx = _recordings.indexWhere((r) => r["id"] == item["id"]);
     if (idx == -1) return;
@@ -450,7 +545,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
       final backPath = item["backVideoPath"] ?? "";
 
       // ✅ if front missing or back missing, still upload whatever exists
-      await ApiService.uploadAnonymousRecording(
+      final response = await ApiService.uploadAnonymousRecording(
         userId: userId,
         frontVideoPath: frontPath.isEmpty ? backPath : frontPath,
         backVideoPath: backPath.isEmpty ? frontPath : backPath,
@@ -465,8 +560,13 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         endLng: item["endLng"],
       );
 
+      final serverId = (response["recording"]?['id'] ?? "").toString();
+
       setState(() {
         _recordings[idx]["uploadStatus"] = "uploaded";
+        if (serverId.isNotEmpty) {
+          _recordings[idx]["serverRecordingId"] = serverId;
+        }
       });
       await _saveRecordings();
 
@@ -482,11 +582,62 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     }
   }
 
-  // ===========================
-  // ✅ DELETE LOCAL FILES + LIST
-  // ===========================
+  // ✅ delete from server + cache + list
+  Future<String> _resolveServerRecordingId(Map<String, dynamic> record) async {
+    final explicit = (record["serverRecordingId"] ?? "").toString().trim();
+    if (explicit.isNotEmpty) return explicit;
+
+    final idValue = (record["id"] ?? "").toString().trim();
+    if (idValue.startsWith("user")) return idValue;
+    return "";
+  }
+
+  Future<void> _deleteRecordingWithConfirmation(int index) async {
+    if (index < 0 || index >= _recordings.length) return;
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Delete recording?"),
+          content: const Text(
+            "This will remove the recording from your phone cache and server history (if uploaded).",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text("Delete"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) return;
+    await _deleteRecording(index);
+  }
+
   Future<void> _deleteRecording(int index) async {
     final r = _recordings[index];
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt("cached_user_id") ?? 1;
+      final serverRecordingId = await _resolveServerRecordingId(r);
+      if (serverRecordingId.isNotEmpty) {
+        await ApiService.deleteAnonymousRecording(
+          userId: userId,
+          recordingId: serverRecordingId,
+        );
+      }
+    } catch (e) {
+      _showSnack("Could not delete from server: $e");
+      return;
+    }
 
     Future<void> safeDelete(String path) async {
       try {
@@ -511,9 +662,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
     return AppTheme.warningColor;
   }
 
-  // ===========================
-  // ✅ UI
-  // ===========================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -525,7 +673,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // ✅ Start/Stop recording button
+            // ✅ start/stop recording button
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
@@ -546,16 +694,32 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
                     ),
                   ),
                   ElevatedButton(
-                    onPressed: _isRecording ? _stopRecording : _startRecording,
+                    onPressed: _isStoppingRecording ? null : (_isRecording ? _stopRecording : _startRecording),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isRecording ? AppTheme.dangerColor : AppTheme.primaryColor,
                       foregroundColor: Colors.white,
                     ),
-                    child: Text(_isRecording ? "Stop" : "Start"),
+                    child: _isStoppingRecording
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text(_isRecording ? "Stop" : "Start"),
                   )
                 ],
               ),
             ),
+            if (_isStoppingRecording) ...[
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Saving recording... Please wait',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
 
             Align(
@@ -565,6 +729,16 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
               ),
             ),
+            if (_isSyncingRemote) ...[
+              const SizedBox(height: 6),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Syncing recordings from server...",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
 
             Expanded(
@@ -575,6 +749,8 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
                 itemBuilder: (context, i) {
                   final r = _recordings[i];
                   final status = r["uploadStatus"] ?? "pending";
+                  final canPlayFront = (r["frontVideoPath"] ?? "").toString().isNotEmpty && File((r["frontVideoPath"] ?? "").toString()).existsSync();
+                  final canPlayBack = (r["backVideoPath"] ?? "").toString().isNotEmpty && File((r["backVideoPath"] ?? "").toString()).existsSync();
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -610,14 +786,14 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
                               child: OutlinedButton.icon(
                                 icon: const Icon(Icons.play_circle_outline_rounded),
                                 label: const Text("Front"),
-                                onPressed: () {
+                                onPressed: canPlayFront ? () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => _VideoPlayer(path: r["frontVideoPath"]),
                                     ),
                                   );
-                                },
+                                } : null,
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -625,18 +801,26 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
                               child: OutlinedButton.icon(
                                 icon: const Icon(Icons.play_circle_outline_rounded),
                                 label: const Text("Back"),
-                                onPressed: () {
+                                onPressed: canPlayBack ? () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => _VideoPlayer(path: r["backVideoPath"]),
                                     ),
                                   );
-                                },
+                                } : null,
                               ),
                             ),
                           ],
                         ),
+
+                        if (!canPlayFront && !canPlayBack) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            "Video file not available for this record.",
+                            style: TextStyle(color: AppTheme.dangerColor, fontSize: 12),
+                          ),
+                        ],
 
                         const SizedBox(height: 10),
 
@@ -678,7 +862,7 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
                           child: TextButton.icon(
                             icon: const Icon(Icons.delete_outline_rounded),
                             label: const Text("Delete"),
-                            onPressed: () => _deleteRecording(i),
+                            onPressed: () => _deleteRecordingWithConfirmation(i),
                             style: TextButton.styleFrom(foregroundColor: AppTheme.dangerColor),
                           ),
                         ),
@@ -695,9 +879,6 @@ class _AnonymousRecordingScreenState extends State<AnonymousRecordingScreen> {
   }
 }
 
-/// ======================================================
-/// ✅ Video Player Widget
-/// ======================================================
 class _VideoPlayer extends StatefulWidget {
   final String path;
   const _VideoPlayer({required this.path});
@@ -708,6 +889,7 @@ class _VideoPlayer extends StatefulWidget {
 
 class _VideoPlayerState extends State<_VideoPlayer> {
   VideoPlayerController? _c;
+  String _error = "";
 
   @override
   void initState() {
@@ -722,17 +904,36 @@ class _VideoPlayerState extends State<_VideoPlayer> {
   }
 
   Future<void> _load() async {
-    final c = VideoPlayerController.file(File(widget.path));
-    await c.initialize();
-    await c.setLooping(true);
-    await c.play();
-    if (!mounted) return;
-    setState(() => _c = c);
+    try {
+      if (widget.path.isEmpty || !await File(widget.path).exists()) {
+        if (!mounted) return;
+        setState(() => _error = "Video file not found on device.");
+        return;
+      }
+
+      final c = VideoPlayerController.file(File(widget.path));
+      await c.initialize();
+      await c.setLooping(true);
+      await c.play();
+      if (!mounted) return;
+      setState(() => _c = c);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = "Unable to play this recording.");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_c == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (_c == null && _error.isEmpty) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_c == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text("Recording")),
+        body: Center(child: Text(_error)),
+      );
+    }
     return Scaffold(
       appBar: AppBar(title: const Text("Recording")),
       body: Center(
@@ -745,9 +946,7 @@ class _VideoPlayerState extends State<_VideoPlayer> {
   }
 }
 
-/// ======================================================
-/// ✅ Location + Images screen
-/// ======================================================
+// / ✅ location + images screen
 class _LocationScreen extends StatelessWidget {
   final Map<String, dynamic> recording;
   const _LocationScreen({required this.recording});

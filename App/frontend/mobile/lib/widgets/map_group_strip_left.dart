@@ -1,4 +1,4 @@
-// lib/widgets/map_group_members_strip_left.dart
+// App/frontend/mobile/lib/widgets/map_group_strip_left.dart
 import 'package:flutter/material.dart';
 import '../models/bubble_model.dart';
 
@@ -24,7 +24,7 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
-    // Don't show if no group is selected
+    // don't show if no group is selected
     if (widget.group == null) {
       return const SizedBox.shrink();
     }
@@ -51,7 +51,6 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
         ),
         child: Row(
           children: [
-            // 👥 count
             Row(
               children: [
                 const Icon(Icons.people, size: 18),
@@ -64,9 +63,7 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
               ],
             ),
 
-            // const Spacer(),
 
-            // ➜ arrow
             InkWell(
               onTap: () => setState(() => _expanded = !_expanded),
               child: Icon(
@@ -77,7 +74,6 @@ class _MapGroupMembersStripLeftState extends State<MapGroupMembersStripLeft> {
               ),
             ),
 
-            // members
             if (_expanded) ...[
               const SizedBox(width: 8),
               Expanded(

@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/app/app.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -10,7 +11,7 @@ import '../screens/main_screen.dart';
 import '../screens/automatic_sos_interrupt_screen.dart';
 import '../services/websocket_service.dart';
 
-/// ✅ REQUIRED: global navigator key for background-triggered UI
+// / ✅ required: global navigator key for background-triggered ui
 final GlobalKey<NavigatorState> navigatorKey =
 GlobalKey<NavigatorState>();
 
@@ -22,7 +23,6 @@ class SafeGuardApp extends StatefulWidget {
 }
 
 class _SafeGuardAppState extends State<SafeGuardApp> {
-  /// 🔗 Channel used by Android (MainActivity.kt)
   static const MethodChannel _sosChannel = MethodChannel('sos_trigger');
   StreamSubscription<Map<String, dynamic>>? _threatSub;
   bool _autoSosDialogOpen = false;
@@ -31,7 +31,6 @@ class _SafeGuardAppState extends State<SafeGuardApp> {
     try {
       await _sosChannel.invokeMethod('clearPendingAutoSOS');
     } catch (_) {
-      // ignore
     }
   }
 
@@ -76,7 +75,6 @@ class _SafeGuardAppState extends State<SafeGuardApp> {
   void initState() {
     super.initState();
 
-    /// 🚨 Listen for AUTO SOS from Android background service
     _sosChannel.setMethodCallHandler((call) async {
       if (call.method == 'autoSOS') {
         debugPrint('🚨 AUTO SOS received from native layer');

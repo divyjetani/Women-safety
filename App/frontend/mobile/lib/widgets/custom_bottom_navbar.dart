@@ -1,4 +1,4 @@
-// lib/idgets/custom_bottom_navbar.dart
+// App/frontend/mobile/lib/widgets/custom_bottom_navbar.dart
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 import 'sos_popup.dart';
@@ -52,7 +52,7 @@ class CustomBottomNavBar extends StatelessWidget {
             context: context,
           ),
 
-          // SOS button as part of the row
+          // sos button as part of the row
           GestureDetector(
             onTap: () => _showSOSPopup(context),
             child: Container(

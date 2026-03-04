@@ -1,4 +1,4 @@
-// lib/screens/bubble_members_screen.dart
+// App/frontend/mobile/lib/screens/bubble_members_screen.dart
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -47,13 +47,11 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
     _initializeServices();
   }
 
-  // ✅ INITIALIZE LOCATION, BATTERY, AND WEBSOCKET
+  // ✅ initialize location, battery, and websocket
   Future<void> _initializeServices() async {
     try {
-      // Get initial battery level
       _batteryLevel = await _battery.batteryLevel;
 
-      // Request location permission
       final permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
@@ -67,7 +65,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
         return;
       }
 
-      // Connect to WebSocket
       _wsService = BubbleWebSocketService(
         bubbleCode: _bubble!.code,
         userId: user.id,
@@ -105,10 +102,8 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
 
       await _wsService.connect();
 
-      // Get initial location
       await _updateLocation();
 
-      // Start periodic updates
       _startLocationUpdates();
       _startBatteryUpdates();
 
@@ -125,7 +120,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
     }
   }
 
-  // ✅ GET CURRENT LOCATION
   Future<void> _updateLocation() async {
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -134,7 +128,7 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
 
       setState(() => _currentPosition = position);
 
-      // Share location via WebSocket
+      // share location via websocket
       if (_isSharing && _wsService.isConnected) {
         _wsService.shareLocation(
           lat: position.latitude,
@@ -143,7 +137,7 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
         );
       }
 
-      // Animate map to current position
+      // animate map to current position
       _mapController.move(
         LatLng(position.latitude, position.longitude),
         15,
@@ -153,7 +147,7 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
     }
   }
 
-  // ✅ START PERIODIC LOCATION UPDATES
+  // ✅ start periodic location updates
   void _startLocationUpdates() {
     Future.doWhile(() async {
       if (!mounted || !_isSharing) {
@@ -167,13 +161,13 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
     });
   }
 
-  // ✅ START BATTERY LEVEL MONITORING
+  // ✅ start battery level monitoring
   void _startBatteryUpdates() {
     _battery.onBatteryStateChanged.listen((BatteryState state) {
       _getBatteryLevel();
     });
 
-    // Update battery every 30 seconds
+    // update battery every 30 seconds
     Future.doWhile(() async {
       if (!mounted) return false;
       await Future.delayed(const Duration(seconds: 30));
@@ -182,13 +176,12 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
     });
   }
 
-  // ✅ GET BATTERY LEVEL
   Future<void> _getBatteryLevel() async {
     try {
       final level = await _battery.batteryLevel;
       setState(() => _batteryLevel = level);
 
-      // Share updated location with new battery level
+      // share updated location with new battery level
       if (_isSharing && _currentPosition != null && _wsService.isConnected) {
         _wsService.shareLocation(
           lat: _currentPosition!.latitude,
@@ -197,17 +190,14 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
         );
       }
     } catch (e) {
-      // Battery level fetch failed
     }
   }
 
-  // ✅ UPDATE MAP MARKERS
   void _updateMapMarkers() {
     if (!mounted) return;
-    // Map will be rebuilt with new marker positions
+    // map will be rebuilt with new marker positions
   }
 
-  // ✅ TOGGLE LOCATION SHARING
   Future<void> _toggleSharing() async {
     setState(() => _isSharing = !_isSharing);
 
@@ -258,7 +248,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
       ),
       body: Column(
         children: [
-          // ✅ ERROR MESSAGE
           if (_errorMessage != null)
             Container(
               padding: const EdgeInsets.all(12),
@@ -277,7 +266,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
               ),
             ),
 
-          // ✅ MAP VIEW
           Expanded(
             child: Stack(
               children: [
@@ -298,7 +286,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
                     ),
                     MarkerLayer(
                       markers: [
-                        // Current user marker
                         if (_currentPosition != null)
                           Marker(
                             width: 80,
@@ -346,7 +333,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
                             ),
                           ),
 
-                        // Other members markers
                         ..._members
                             .where((m) => m.lat != null && m.lng != null)
                             .map((member) => Marker(
@@ -399,14 +385,12 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
                   ],
                 ),
 
-                // ✅ FLOATING ACTION BUTTONS
                 Positioned(
                   bottom: 24,
                   right: 24,
                   child: Column(
                     spacing: 12,
                     children: [
-                      // Sharing toggle
                       FloatingActionButton(
                         backgroundColor: _isSharing
                             ? const Color(0xFF00E676)
@@ -418,7 +402,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
                         ),
                       ),
 
-                      // Center on current location
                       FloatingActionButton(
                         backgroundColor: const Color(0xFFFF1744),
                         onPressed: () {
@@ -441,7 +424,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
             ),
           ),
 
-          // ✅ MEMBERS LIST PANEL
           Container(
             color: const Color(0xFF1A1F2E),
             padding: const EdgeInsets.all(16),
@@ -503,7 +485,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Status indicator
                             Row(
                               children: [
                                 Container(
@@ -531,7 +512,6 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            // Battery level
                             Row(
                               children: [
                                 Icon(
@@ -564,14 +544,12 @@ class _BubbleMembersScreenState extends State<BubbleMembersScreen> {
     );
   }
 
-  // ✅ BATTERY COLOR
   Color _getBatteryColor(int battery) {
     if (battery >= 50) return Colors.green;
     if (battery >= 20) return Colors.orange;
     return Colors.red;
   }
 
-  // ✅ BATTERY ICON
   IconData _getBatteryIcon(int battery) {
     if (battery >= 75) return Icons.battery_full;
     if (battery >= 50) return Icons.battery_6_bar;

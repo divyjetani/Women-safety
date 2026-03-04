@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/recent_activity_details.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../models/models.dart';

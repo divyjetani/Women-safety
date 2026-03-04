@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/app_snackbar.dart
 import 'package:flutter/material.dart';
 
 enum AppSnackBarType { info, success, warning, error }

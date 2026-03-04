@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/edit_profile_screen.dart
 import 'dart:convert';
 import 'dart:io';
 
@@ -205,7 +206,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           backgroundImage: MemoryImage(base64Decode(_faceImageValue)),
         );
       } catch (_) {
-        // ignore and fall through
       }
     }
 

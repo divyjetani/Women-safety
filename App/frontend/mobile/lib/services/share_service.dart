@@ -1,4 +1,4 @@
-// lib/services/share_service.dart
+// App/frontend/mobile/lib/services/share_service.dart
 import 'package:battery_plus/battery_plus.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -13,7 +13,7 @@ class ShareService {
     return await _battery.batteryLevel;
   }
 
-  /// Share location & battery to all bubbles the user is a member of
+  // / share location & battery to all bubbles the user is a member of
   Future<void> shareToGroup({
     required bool incognito,
     required String groupId,
@@ -28,7 +28,7 @@ class ShareService {
       
       if (user == null) return;
 
-      // Call the backend share-location endpoint
+      // call the backend share-location endpoint
       final response = await http.post(
         Uri.parse('$baseUrl/bubble/share-location'),
         headers: {
@@ -44,12 +44,10 @@ class ShareService {
       ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        // ignore: avoid_print
         print("Location shared: ($lat,$lng), battery=$battery%");
       }
     } catch (e) {
-      // Silently fail - don't interrupt user experience
-      // ignore: avoid_print
+      // silently fail - don't interrupt user experience
       print("Failed to share location: $e");
     }
   }

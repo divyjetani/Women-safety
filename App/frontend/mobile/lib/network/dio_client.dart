@@ -1,4 +1,4 @@
-// lib/network/dio_client.dart
+// App/frontend/mobile/lib/network/dio_client.dart
 import 'dart:io';
 import 'package:dio/dio.dart';
 
@@ -22,7 +22,7 @@ class DioClient {
       InterceptorsWrapper(
         onRequest: (options, handler) {
           // ✅ you can add tokens here later
-          // options.headers["Authorization"] = "Bearer token";
+          // options.headers["authorization"] = "bearer token";
           handler.next(options);
         },
         onError: (error, handler) async {
@@ -33,7 +33,6 @@ class DioClient {
             return;
           }
 
-          // ✅ retry config
           const maxRetries = 2;
           final retryCount = (error.requestOptions.extra["retryCount"] ?? 0) as int;
 
@@ -63,7 +62,7 @@ class DioClient {
   }
 
   static bool _shouldRetry(DioException e) {
-    // ✅ network / no internet / DNS fail etc.
+    // ✅ network / no internet / dns fail etc.
     if (e.type == DioExceptionType.connectionError ||
         e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
@@ -71,7 +70,6 @@ class DioClient {
       return true;
     }
 
-    // ✅ handle SocketException
     if (e.error is SocketException) return true;
 
     // ✅ retry on server errors (5xx)

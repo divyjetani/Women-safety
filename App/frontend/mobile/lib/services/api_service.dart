@@ -1,4 +1,4 @@
-// app/api_service.dart
+// App/frontend/mobile/lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
@@ -13,8 +13,18 @@ import 'background_location_service.dart';
 class ApiService {
   static const String baseUrl = ApiUrls.baseUrl;
 
-  // ✅ request timeout
+  static String _absoluteUrl(String value) {
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    if (value.startsWith('/')) {
+      return '$baseUrl$value';
+    }
+    return '$baseUrl/$value';
+  }
+
   static const Duration _timeout = Duration(seconds: 12);
+  static const Duration _aiTimeout = Duration(seconds: 120);
 
   // ✅ common headers (adds token automatically)
   static Future<Map<String, String>> _headers({bool withAuth = false}) async {
@@ -33,9 +43,9 @@ class ApiService {
     return headers;
   }
 
-  // ✅ Handle Map response
   static Future<Map<String, dynamic>> _makeRequest(
       Future<http.Response> Function() request,
+      {Duration? timeout}
       ) async {
     try {
       final isConnected = await ConnectivityService.isConnected();
@@ -43,9 +53,9 @@ class ApiService {
         throw Exception('No internet connection');
       }
 
-      final response = await request().timeout(_timeout);
+      final response = await request().timeout(timeout ?? _timeout);
 
-      // ✅ decode safely (some APIs may return empty body)
+      // ✅ decode safely (some apis may return empty body)
       dynamic decoded;
       if (response.body.isNotEmpty) {
         decoded = jsonDecode(response.body);
@@ -56,7 +66,7 @@ class ApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         if (decoded is Map<String, dynamic>) return decoded;
 
-        // ✅ if response is List but method expects Map
+        // ✅ if response is list but method expects map
         return {"data": decoded};
       } else {
         // ✅ try reading fastapi "detail"
@@ -70,9 +80,9 @@ class ApiService {
     }
   }
 
-  // ✅ Handle List response
   static Future<List<dynamic>> _makeListRequest(
       Future<http.Response> Function() request,
+      {Duration? timeout}
       ) async {
     try {
       final isConnected = await ConnectivityService.isConnected();
@@ -80,7 +90,7 @@ class ApiService {
         throw Exception('No internet connection');
       }
 
-      final response = await request().timeout(_timeout);
+      final response = await request().timeout(timeout ?? _timeout);
 
       dynamic decoded;
       if (response.body.isNotEmpty) {
@@ -92,7 +102,7 @@ class ApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         if (decoded is List) return decoded;
 
-        // ✅ sometimes API sends: { "data": [ ... ] }
+        // ✅ sometimes api sends: { "data": [ ... ] }
         if (decoded is Map && decoded["data"] is List) {
           return decoded["data"];
         }
@@ -109,9 +119,6 @@ class ApiService {
     }
   }
 
-  // ==========================
-  // ✅ AUTH
-  // ==========================
 
   static Future<LoginResponse> login({
     required String email,
@@ -220,7 +227,7 @@ class ApiService {
   static Future<void> saveCurrentUser(User user) async {
     final prefs = await SharedPreferences.getInstance();
 
-    // If account changed, drop profile/contact caches from previous sessions.
+    // if account changed, drop profile/contact caches from previous sessions.
     final previousUserId = prefs.getInt('cached_user_id');
     if (previousUserId != null && previousUserId != user.id) {
       final keys = prefs.getKeys();
@@ -251,9 +258,6 @@ class ApiService {
     return prefs.getString('token') != null;
   }
 
-  // ==========================
-  // ✅ SOS
-  // ==========================
 
   static Future<SOSResponse> sendSOS({
     required int userId,
@@ -356,9 +360,6 @@ class ApiService {
     });
   }
 
-  // ==========================
-  // ✅ HOME APIs
-  // ==========================
 
   static Future<SafetyStats> getSafetyStats(int userId) async {
     try {
@@ -369,13 +370,11 @@ class ApiService {
         );
       });
 
-      // ✅ cache
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cached_stats_$userId', jsonEncode(jsonResponse));
 
       return SafetyStats.fromJson(jsonResponse);
     } catch (e) {
-      // ✅ fallback cached
       final prefs = await SharedPreferences.getInstance();
       final cachedStats = prefs.getString('cached_stats_$userId');
 
@@ -384,7 +383,6 @@ class ApiService {
         return SafetyStats.fromJson(json);
       }
 
-      // ✅ default
       return SafetyStats(
         safetyScore: 85,
         safeZones: 8,
@@ -404,13 +402,11 @@ class ApiService {
         );
       });
 
-      // ✅ cache list
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cached_activity_$userId', jsonEncode(jsonList));
 
       return _parseRecentActivities(jsonList);
     } catch (e) {
-      // ✅ cached fallback
       final prefs = await SharedPreferences.getInstance();
       final cached = prefs.getString('cached_activity_$userId');
 
@@ -435,9 +431,6 @@ class ApiService {
     return parsed;
   }
 
-  // ==========================
-  // ✅ THREAT REPORTS
-  // ==========================
 
   static Future<List<ThreatReport>> getThreatReports() async {
     try {
@@ -450,7 +443,7 @@ class ApiService {
 
       List<dynamic> data;
 
-      // ✅ supports: {results: []} OR []
+      // ✅ supports: {results: []} or []
       if (jsonResponse.containsKey('results') && jsonResponse['results'] is List) {
         data = jsonResponse['results'];
       } else if (jsonResponse.containsKey('data') && jsonResponse['data'] is List) {
@@ -459,7 +452,6 @@ class ApiService {
         data = [];
       }
 
-      // ✅ cache
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('cached_threat_reports', jsonEncode(data));
 
@@ -477,9 +469,6 @@ class ApiService {
     }
   }
 
-  // ==========================
-  // ✅ PROFILE APIs
-  // ==========================
 
   static Future<Map<String, dynamic>> getProfile(int userId) async {
     return await _makeRequest(() async {
@@ -585,9 +574,6 @@ class ApiService {
     });
   }
 
-  // ==========================
-  // ✅ NOTIFICATIONS APIs
-  // ==========================
 
   static Future<List<dynamic>> getNotifications(int userId) async {
     final jsonResponse = await _makeRequest(() async {
@@ -681,9 +667,7 @@ class ApiService {
     });
   }
 
-  // ==========================
-  // ✅ NEW: QUICK ACTION DETAILS (no Dio)
-  // ==========================
+  // ✅ new: quick action details (no dio)
 
   static Future<Map<String, dynamic>> getQuickActionDetails({
     required int userId,
@@ -697,9 +681,6 @@ class ApiService {
     });
   }
 
-  // ==========================
-  // ✅ NEW: GUARDIANS (no Dio)
-  // ==========================
 
   static Future<List<dynamic>> getGuardians({
     required int userId,
@@ -712,9 +693,6 @@ class ApiService {
     });
   }
 
-  // ==========================
-  // ✅ NEW: HISTORY (no Dio)
-  // ==========================
 
   static Future<List<dynamic>> getHistory({
     required int userId,
@@ -727,9 +705,7 @@ class ApiService {
     });
   }
 
-  // ==========================
-  // ✅ NEW: HELP & SUPPORT FAQs (no Dio)
-  // ==========================
+  // ✅ new: help & support faqs (no dio)
 
   static Future<List<dynamic>> getFaqs() async {
     return await _makeListRequest(() async {
@@ -945,6 +921,72 @@ class ApiService {
     throw Exception("Upload failed (${response.statusCode}): ${response.body}");
   }
 
+  static Future<List<Map<String, dynamic>>> fetchAnonymousRecordingHistory({
+    required int userId,
+  }) async {
+    final data = await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/recordings/anonymous-history?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+
+    final history = (data['history'] as List<dynamic>? ?? []);
+    return history
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchFakeCallRecordingHistory({
+    required int userId,
+  }) async {
+    final data = await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/recordings/fakecall-history?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+
+    final history = (data['history'] as List<dynamic>? ?? []);
+    return history
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e.cast<String, dynamic>()))
+        .toList();
+  }
+
+  static Future<List<int>> downloadMediaBytes(String mediaUrl) async {
+    final response = await http.get(Uri.parse(_absoluteUrl(mediaUrl))).timeout(_timeout);
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return response.bodyBytes;
+    }
+    throw Exception('Failed to download media (${response.statusCode})');
+  }
+
+  static Future<Map<String, dynamic>> deleteAnonymousRecording({
+    required int userId,
+    required String recordingId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.delete(
+        Uri.parse('$baseUrl/recordings/anonymous/$recordingId?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> deleteFakeCallRecording({
+    required int userId,
+    required String recordingId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.delete(
+        Uri.parse('$baseUrl/recordings/fakecall/$recordingId?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
   static Future<Map<String, dynamic>> askAI({
     required int userId,
     required String question,
@@ -960,7 +1002,7 @@ class ApiService {
           "detailed": detailed,
         }),
       );
-    });
+    }, timeout: _aiTimeout);
   }
 
   static Future<Map<String, dynamic>> getAnalyticsOverview({
@@ -988,16 +1030,12 @@ class ApiService {
     });
   }
 
-  // ==========================
-// ✅ BUBBLES / GROUPS
-// ==========================
 
   static Future<CreateBubbleResponse> createBubble({
     required String name,
     required int icon,
     required int color,
   }) async {
-    // Get current user info
     final user = await getCurrentUser();
     if (user == null) {
       throw Exception('User not logged in');
@@ -1021,7 +1059,6 @@ class ApiService {
   }
 
   static Future<List<SafetyGroup>> getUserBubbles() async {
-    // Get current user info
     final user = await getCurrentUser();
     if (user == null) {
       throw Exception('User not logged in');
@@ -1039,7 +1076,6 @@ class ApiService {
   }
 
   static Future<SafetyGroup> joinBubbleByCode(String code) async {
-    // Get current user info
     final user = await getCurrentUser();
     if (user == null) {
       throw Exception('User not logged in');

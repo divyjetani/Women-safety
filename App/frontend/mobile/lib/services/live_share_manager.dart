@@ -1,4 +1,4 @@
-// lib/services/live_share_manager.dart
+// App/frontend/mobile/lib/services/live_share_manager.dart
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:battery_plus/battery_plus.dart';
@@ -43,7 +43,6 @@ class LiveShareManager {
           incognito: false,
         );
       } catch (_) {
-        // ignore / log
       }
     });
   }

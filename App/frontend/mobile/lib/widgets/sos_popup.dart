@@ -1,10 +1,16 @@
-// lib/widgets/sos_popup.dart
+// App/frontend/mobile/lib/widgets/sos_popup.dart
+
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:battery_plus/battery_plus.dart';
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../app/auth_provider.dart';
 import '../app/theme.dart';
@@ -13,10 +19,9 @@ import '../services/firebase_service.dart';
 import '../services/group_storage.dart';
 
 class SOSPopup extends StatefulWidget {
-  /// ✅ pass incognito from your map screen / state
+  // / ✅ pass incognito from your map screen / state
   final bool incognito;
 
-  /// ✅ group id = bubble
   final String groupId;
   final bool autoStart;
   final bool automaticFlow;
@@ -40,6 +45,72 @@ class _SOSPopupState extends State<SOSPopup> {
 
   final FlutterLocalNotificationsPlugin _localNotificationsPlugin =
   FlutterLocalNotificationsPlugin();
+  final AudioRecorder _audioRecorder = AudioRecorder();
+
+  @override
+  void dispose() {
+    _audioRecorder.dispose();
+    super.dispose();
+  }
+
+  Future<String> _captureSelfieBase64() async {
+    CameraController? controller;
+    try {
+      final cams = await availableCameras();
+      if (cams.isEmpty) return '';
+      final front = cams.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cams.first,
+      );
+
+      controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
+      await controller.initialize();
+      final picture = await controller.takePicture();
+      final bytes = await File(picture.path).readAsBytes();
+      if (bytes.isEmpty) return '';
+      return 'data:image/jpeg;base64,${base64Encode(bytes)}';
+    } catch (_) {
+      return '';
+    } finally {
+      try {
+        await controller?.dispose();
+      } catch (_) {}
+    }
+  }
+
+  Future<String> _capture10sAudioBase64() async {
+    try {
+      final hasMicPermission = await _audioRecorder.hasPermission();
+      if (!hasMicPermission) return '';
+
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/sos_audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: path,
+      );
+
+      await Future<void>.delayed(const Duration(seconds: 10));
+      final output = await _audioRecorder.stop();
+      if (output == null || output.trim().isEmpty) return '';
+
+      final file = File(output);
+      if (!await file.exists()) return '';
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return '';
+      return 'data:audio/mp4;base64,${base64Encode(bytes)}';
+    } catch (_) {
+      try {
+        await _audioRecorder.stop();
+      } catch (_) {}
+      return '';
+    }
+  }
 
   @override
   void initState() {
@@ -77,7 +148,7 @@ class _SOSPopupState extends State<SOSPopup> {
         throw Exception('User not logged in');
       }
 
-      // ✅ STEP 1: show local notification immediately
+      // ✅ step 1: show local notification immediately
       await _showLocalNotification(user.username, 'Sending SOS...');
 
       if (!mounted) return;
@@ -87,10 +158,10 @@ class _SOSPopupState extends State<SOSPopup> {
             : 'Sending notifications to emergency contacts...';
       });
 
-      // ✅ STEP 2: emergency contacts notification
+      // ✅ step 2: emergency contacts notification
       await _sendEmergencyNotifications(user.username, 'Current Location');
 
-      // ✅ STEP 3: If incognito ON => stop group SOS
+      // ✅ step 3: if incognito on => stop group sos
       if (incognito) {
         if (!mounted) return;
         setState(() {
@@ -105,10 +176,23 @@ class _SOSPopupState extends State<SOSPopup> {
         return;
       }
 
-      // ✅ STEP 4: send full SOS payload to backend
+      // ✅ step 4: send full sos payload to backend
       if (!mounted) return;
       setState(() {
-        _status = 'Sharing SOS details with contacts, bubble members, and police prototype...';
+        _status = 'Capturing selfie image for SOS...';
+      });
+
+      final capturedSelfie = await _captureSelfieBase64();
+      if (!mounted) return;
+
+      setState(() {
+        _status = 'Recording 10s SOS audio clip...';
+      });
+      final capturedAudio = await _capture10sAudioBase64();
+
+      if (!mounted) return;
+      setState(() {
+        _status = 'Sharing SOS details with media to contacts and bubble members...';
       });
 
       try {
@@ -141,25 +225,11 @@ class _SOSPopupState extends State<SOSPopup> {
           triggerReason: 'Manual SOS button pressed by user',
           message: 'SOS from ${user.username}. Need immediate help.',
           bubbleCode: selectedBubbleCode,
-          cameraFrontImage: user.faceImage,
+          cameraFrontImage: capturedSelfie.isNotEmpty ? capturedSelfie : user.faceImage,
           cameraBackImage: user.faceImage,
-          audio10sUrl: '',
+          audio10sUrl: capturedAudio,
         );
-
-        Future.microtask(() async {
-          try {
-            await Future<void>.delayed(const Duration(seconds: 2));
-            await ApiService.updateSosMedia(
-              userId: user.id,
-              eventId: sosResponse.reportId,
-              cameraFrontImage: user.faceImage,
-              cameraBackImage: user.faceImage,
-              audio10sUrl: 'pending://10s-audio-capture',
-            );
-          } catch (e) {
-            debugPrint('SOS media async update failed: $e');
-          }
-        });
+        debugPrint('SOS sent with reportId=${sosResponse.reportId}');
       } catch (e) {
         debugPrint("SOS backend failed: $e");
       }
@@ -187,8 +257,7 @@ class _SOSPopupState extends State<SOSPopup> {
       });
       debugPrint('SOS Error: $e');
     } finally {
-      if (!mounted) return;
-      if (!_success) {
+      if (mounted && !_success) {
         setState(() => _isSending = false);
       }
     }
@@ -222,7 +291,6 @@ class _SOSPopupState extends State<SOSPopup> {
 
       await _localNotificationsPlugin.initialize(initializationSettings);
 
-      // ✅ Android channel
       const AndroidNotificationChannel channel = AndroidNotificationChannel(
         'emergency_channel',
         'Emergency Alerts',
@@ -453,7 +521,7 @@ class _SOSPopupState extends State<SOSPopup> {
         const SizedBox(width: 12),
         Expanded(
           child: ElevatedButton(
-            // ✅ FIXED: wrap inside function
+            // ✅ fixed: wrap inside function
             onPressed: _isSending
                 ? null
                 : () => _sendSOS(

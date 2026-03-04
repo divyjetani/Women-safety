@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/threat_indicator.dart
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 

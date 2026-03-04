@@ -1,5 +1,7 @@
+// App/frontend/mobile/lib/widgets/quick_action_details.dart
 import 'package:flutter/material.dart';
-import '../../services/api_service.dart';
+import '../services/api_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class QuickActionDetailsScreen extends StatefulWidget {
   final int userId;
@@ -15,6 +17,18 @@ class _QuickActionDetailsScreenState extends State<QuickActionDetailsScreen> {
   Map<String, dynamic> data = {};
   List<Map<String, dynamic>> emergencyContacts = [];
   String? loadError;
+
+  Future<void> _callNumber(String phone) async {
+    final normalized = phone.trim();
+    if (normalized.isEmpty || normalized == 'N/A') return;
+    final uri = Uri.parse('tel:$normalized');
+    final launched = await launchUrl(uri);
+    if (!launched && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open dial pad')),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -125,6 +139,11 @@ class _QuickActionDetailsScreenState extends State<QuickActionDetailsScreen> {
                     Text(phone),
                   ],
                 ),
+              ),
+              IconButton(
+                onPressed: () => _callNumber(phone),
+                icon: const Icon(Icons.call_rounded),
+                tooltip: 'Call',
               ),
             ],
           ),

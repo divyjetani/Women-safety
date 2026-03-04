@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -141,6 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: authProvider.isLoading
                       ? null
                       : () async {
+                          final auth = context.read<AuthProvider>();
                           final newPassword = newPasswordController.text;
                           final confirmPassword = confirmPasswordController.text;
 
@@ -159,8 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             return;
                           }
 
-                          setDialogState(() {});
-                          final success = await ctx.read<AuthProvider>().resetPasswordAndLogin(
+                          final success = await auth.resetPasswordAndLogin(
                                 email: email,
                                 newPassword: newPassword,
                                 confirmPassword: confirmPassword,
@@ -168,19 +169,20 @@ class _LoginScreenState extends State<LoginScreen> {
                           if (!mounted) return;
 
                           if (success) {
-                            if (Navigator.of(dialogContext).canPop()) {
-                              Navigator.of(dialogContext).pop();
+                            final rootNavigator = Navigator.of(context, rootNavigator: true);
+                            if (rootNavigator.canPop()) {
+                              rootNavigator.pop();
                             }
-                            Navigator.pushReplacement(
-                              context,
+                            Navigator.of(context).pushAndRemoveUntil(
                               MaterialPageRoute(builder: (_) => const MainScreen()),
+                              (route) => false,
                             );
                             return;
                           }
 
                           AppSnackBar.show(
-                            ctx,
-                            ctx.read<AuthProvider>().error ?? 'Failed to reset password.',
+                            context,
+                            auth.error ?? 'Failed to reset password.',
                             type: AppSnackBarType.error,
                           );
                         },
@@ -221,7 +223,6 @@ class _LoginScreenState extends State<LoginScreen> {
               children: [
                 const SizedBox(height: 60),
 
-                /// LOGO
                 Center(
                   child: Column(
                     children: [
@@ -263,7 +264,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 60),
 
-                /// TITLE
                 Text('Login', style: text.titleLarge),
                 const SizedBox(height: 8),
                 Text(
@@ -273,7 +273,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 24),
 
-                /// EMAIL + PASSWORD INPUT
                 Form(
                   key: _formKey,
                   child: Column(
@@ -348,7 +347,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 32),
 
-                /// LOGIN BUTTON
                 SizedBox(
                   width: double.infinity,
                   height: 56,
@@ -376,7 +374,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 32),
 
-                /// EMERGENCY BUTTON
                 OutlinedButton(
                   onPressed: _launchEmergencyCall,
                   style: OutlinedButton.styleFrom(
@@ -403,7 +400,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 const SizedBox(height: 24),
 
-                /// NEW USER CTA
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(

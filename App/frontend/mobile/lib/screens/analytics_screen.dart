@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/analytics_screen.dart
 import 'package:flutter/material.dart';
 
 import '../services/api_service.dart';
@@ -12,6 +13,7 @@ class AnalyticsScreenV2 extends StatefulWidget {
 
 class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
   static _AnalyticsSessionCache? _sessionCache;
+  static const int _recentAlertsPreviewCount = 3;
 
   bool loading = true;
   bool isPremium = false;
@@ -132,6 +134,8 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
 
   @override
   Widget build(BuildContext context) {
+    final recentAlerts = alertsHistory.take(_recentAlertsPreviewCount).toList();
+
     if (loading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -155,16 +159,34 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                   context,
                   title: 'Alerts History',
                   child: Column(
-                    children: alertsHistory
-                        .map(
+                    children: [
+                      if (recentAlerts.isEmpty)
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('No alerts available'),
+                        )
+                      else
+                        ...recentAlerts.map(
                           (item) => ListTile(
                             contentPadding: EdgeInsets.zero,
                             leading: const Icon(Icons.location_on_outlined),
-                            title: Text((item['location'] ?? '').toString()),
-                            subtitle: Text('${(item['threatType'] ?? '').toString()} • ${(item['time'] ?? '').toString()}'),
+                            title: Text((item['location'] ?? 'Unknown location').toString()),
+                            subtitle: Text(
+                              '${(item['threatType'] ?? 'Unknown threat').toString()} • ${(item['time'] ?? '').toString()}',
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: () => _openAlertDetails(item),
                           ),
-                        )
-                        .toList(),
+                        ),
+                      if (alertsHistory.length > _recentAlertsPreviewCount)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _openAllAlertsHistory,
+                            child: const Text('See all alert history'),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -416,6 +438,125 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
         ],
       ),
     );
+  }
+
+  void _openAllAlertsHistory() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _AllAlertsHistoryScreen(
+          alertsHistory: alertsHistory,
+          onAlertTap: _openAlertDetails,
+        ),
+      ),
+    );
+  }
+
+  void _openAlertDetails(Map<String, dynamic> alert) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _AlertDetailsScreen(alert: alert),
+      ),
+    );
+  }
+}
+
+class _AllAlertsHistoryScreen extends StatelessWidget {
+  final List<Map<String, dynamic>> alertsHistory;
+  final void Function(Map<String, dynamic>) onAlertTap;
+
+  const _AllAlertsHistoryScreen({
+    required this.alertsHistory,
+    required this.onAlertTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('All Alert History')),
+      body: alertsHistory.isEmpty
+          ? const Center(child: Text('No alerts available'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: alertsHistory.length,
+              itemBuilder: (context, index) {
+                final item = alertsHistory[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: const Icon(Icons.warning_amber_rounded),
+                    title: Text((item['location'] ?? 'Unknown location').toString()),
+                    subtitle: Text(
+                      '${(item['threatType'] ?? 'Unknown threat').toString()} • ${(item['time'] ?? '').toString()}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => onAlertTap(item),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
+
+class _AlertDetailsScreen extends StatelessWidget {
+  final Map<String, dynamic> alert;
+
+  const _AlertDetailsScreen({required this.alert});
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = alert.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Alert Details')),
+      body: entries.isEmpty
+          ? const Center(child: Text('No alert details available'))
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: entries.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final entry = entries[index];
+                final keyLabel = entry.key
+                    .replaceAllMapped(RegExp(r'([A-Z])'), (m) => ' ${m.group(1)}')
+                    .replaceAll('_', ' ')
+                    .trim();
+
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        keyLabel,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      SelectableText(
+                        _stringify(entry.value),
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  static String _stringify(dynamic value) {
+    if (value == null) return '-';
+    if (value is String) return value.isEmpty ? '-' : value;
+    if (value is num || value is bool) return value.toString();
+    if (value is List || value is Map) return value.toString();
+    return '$value';
   }
 }
 

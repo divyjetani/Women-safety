@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/sos_controller.dart
 import 'package:geolocator/geolocator.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:mobile/services/group_api.dart';
@@ -14,7 +15,7 @@ class SosController {
     required bool incognito,
   }) async {
     if (incognito) {
-      // If user incognito, we should not send SOS to group
+      // if user incognito, we should not send sos to group
       return;
     }
 

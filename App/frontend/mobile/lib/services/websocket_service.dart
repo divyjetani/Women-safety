@@ -1,4 +1,4 @@
-// lib/services/websocket_service.dart
+// App/frontend/mobile/lib/services/websocket_service.dart
 import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/io.dart';
@@ -12,6 +12,7 @@ class WebSocketService {
   IOWebSocketChannel? _channel;
   StreamSubscription? _sub;
   bool _connecting = false;
+  int? _lastUserId;
   static final StreamController<Map<String, dynamic>> _threatController =
       StreamController<Map<String, dynamic>>.broadcast();
 
@@ -29,8 +30,9 @@ class WebSocketService {
   Future<void> connect([int? userId]) async {
     if (_channel != null || _connecting) return;
     _connecting = true;
+    _lastUserId = userId ?? _lastUserId;
     try {
-      _channel = IOWebSocketChannel.connect(_wsUrl(userId: userId));
+      _channel = IOWebSocketChannel.connect(_wsUrl(userId: _lastUserId));
       _sub = _channel!.stream.listen((msg) {
         if (msg is String) {
           try {
@@ -43,7 +45,6 @@ class WebSocketService {
               }
             }
           } catch (_) {
-            // ignore non-json text frames
           }
         }
       }, onDone: _onDone, onError: _onError, cancelOnError: true);
@@ -54,12 +55,12 @@ class WebSocketService {
 
   void _onDone() {
     _disposeChannel();
-    Future.delayed(const Duration(seconds: 2), () => connect());
+    Future.delayed(const Duration(seconds: 2), () => connect(_lastUserId));
   }
 
   void _onError(Object err) {
     _disposeChannel();
-    Future.delayed(const Duration(seconds: 2), () => connect());
+    Future.delayed(const Duration(seconds: 2), () => connect(_lastUserId));
   }
 
   Future<void> sendAudioSamples(List<int> samples) async {
@@ -84,6 +85,7 @@ class WebSocketService {
     await _sub?.cancel();
     await _channel?.sink.close();
     _disposeChannel();
+    _lastUserId = null;
   }
 
   void _disposeChannel() {

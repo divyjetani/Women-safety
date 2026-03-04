@@ -1,4 +1,4 @@
-// lib/widgets/create_bubble_dialog.dart
+// App/frontend/mobile/lib/widgets/create_bubble_dialog.dart
 import 'package:flutter/material.dart';
 
 class CreateBubbleDialog extends StatefulWidget {

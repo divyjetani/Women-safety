@@ -1,11 +1,10 @@
-// lib/network/dio_error
+// App/frontend/mobile/lib/network/dio_error.dart
 import 'dart:io';
 import 'package:dio/dio.dart';
 
 class DioErrorMapper {
   static String message(dynamic error) {
     if (error is DioException) {
-      // no internet / socket
       if (error.error is SocketException) {
         return "No internet connection. Please check your WiFi or mobile data.";
       }

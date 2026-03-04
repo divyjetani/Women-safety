@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/main_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../app/auth_provider.dart';
@@ -38,7 +39,6 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
 
-    // Check if user is logged in
     if (authProvider.currentUser == null) {
       return const LoginScreen();
     }

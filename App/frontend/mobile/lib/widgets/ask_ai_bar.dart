@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/ask_ai_bar.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
@@ -419,7 +420,6 @@ class _RichParagraph extends StatelessWidget {
     int currentIndex = 0;
 
     for (final match in exp.allMatches(text)) {
-      // Normal text before match
       if (match.start > currentIndex) {
         spans.add(
           TextSpan(
@@ -430,7 +430,6 @@ class _RichParagraph extends StatelessWidget {
 
       final matchedText = match.group(0)!;
 
-      // **bold**
       if (matchedText.startsWith('**')) {
         spans.add(
           TextSpan(
@@ -440,7 +439,6 @@ class _RichParagraph extends StatelessWidget {
         );
       }
 
-      // *italic*
       else if (matchedText.startsWith('*')) {
         spans.add(
           TextSpan(
@@ -450,7 +448,6 @@ class _RichParagraph extends StatelessWidget {
         );
       }
 
-      // ~~strike~~
       else if (matchedText.startsWith('~~')) {
         spans.add(
           TextSpan(
@@ -462,7 +459,6 @@ class _RichParagraph extends StatelessWidget {
         );
       }
 
-      // `inline code`
       else if (matchedText.startsWith('`')) {
         spans.add(
           WidgetSpan(
@@ -489,7 +485,6 @@ class _RichParagraph extends StatelessWidget {
       currentIndex = match.end;
     }
 
-    // Remaining normal text
     if (currentIndex < text.length) {
       spans.add(
         TextSpan(
@@ -535,9 +530,6 @@ class _CodeBlock extends StatelessWidget {
 }
 
 
-/// ======================================================
-/// ✅ Animated Answer Sheet
-/// ======================================================
 class _AIAnswerSheet extends StatefulWidget {
   final String question;
   final String shortAnswer;
@@ -615,7 +607,6 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
                 ),
                 child: Column(
                   children: [
-                    // ✅ Drag handle
                     Container(
                       width: 44,
                       height: 5,
@@ -626,14 +617,13 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
                       ),
                     ),
 
-                    // ✅ Header
                     Row(
                       children: [
                         Container(
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            // color: AppTheme.primaryColor.withOpacity(0.12),
+                            // color: apptheme.primarycolor.withopacity(0.12),
                             borderRadius: BorderRadius.circular(14),
                           ),
                           child: Icon(Icons.auto_awesome_rounded, color: AppTheme.primaryColor),
@@ -678,13 +668,12 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
 
                     const SizedBox(height: 10),
 
-                    // ✅ Body scrollable (NO overflow)
+                    // ✅ body scrollable (no overflow)
                     Expanded(
                       child: ListView(
                         controller: scrollController,
                         physics: const BouncingScrollPhysics(),
                         children: [
-                          // ✅ Question
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
@@ -700,7 +689,6 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
 
                           const SizedBox(height: 12),
 
-                          // ✅ Answer Card
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(14),
@@ -735,7 +723,7 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
 
                           const SizedBox(height: 12),
 
-                          // ✅ Tips Chips only in short mode
+                          // ✅ tips chips only in short mode
                           if (!hasDetailed && widget.tips.isNotEmpty)
                             Wrap(
                               spacing: 8,
@@ -761,7 +749,6 @@ class _AIAnswerSheetState extends State<_AIAnswerSheet> with SingleTickerProvide
                       ),
                     ),
 
-                    // ✅ Buttons
                     if (!hasDetailed)
                       Row(
                         children: [
@@ -852,9 +839,6 @@ class _MarkdownAnswer extends StatelessWidget {
 }
 
 
-/// ======================================================
-/// ✅ Error sheet with Retry
-/// ======================================================
 class _AIErrorSheet extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;

@@ -1,4 +1,4 @@
-// screens/home_screen.dart
+// App/frontend/mobile/lib/screens/home_screen.dart
 import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
@@ -20,17 +20,14 @@ import '../widgets/skeleton_loader_for_home.dart';
 import '../widgets/app_snackbar.dart';
 import '../app/theme.dart';
 
-// bottom sheet pages
 import 'history_screen.dart';
 import 'help_support_screen.dart';
 
-// detail pages
 import 'package:mobile/widgets/safety_score_details.dart';
 import 'package:mobile/widgets/stats_details.dart';
 import 'package:mobile/widgets/quick_action_details.dart';
 import 'package:mobile/widgets/recent_activity_details.dart';
 
-// CTA pages
 import 'package:mobile/screens/anonymous_recording_screen.dart';
 import 'package:mobile/screens/fake_call_screen.dart';
 
@@ -60,12 +57,11 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _hasError = false;
   String _errorMessage = '';
 
-  // ✅ timeout (UI banner, NOT popup)
+  // ✅ timeout (ui banner, not popup)
   Timer? _timeoutTimer;
   bool _timedOut = false;
   static const Duration _apiTimeout = Duration(seconds: 12);
 
-  // ✅ user info (cache first)
   String _username = "Loading...";
   String _email = "Loading...";
   int _userId = 0;
@@ -75,6 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _backgroundSafetyOn = false;
   bool _isRefreshingLiveScore = false;
   bool _hasUnreadNotifications = false;
+  bool _isMaleUser = false;
 
 
   final _appLinks = AppLinks();
@@ -82,8 +79,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _toggleBackgroundSafety() async {
     final prefs = await SharedPreferences.getInstance();
 
+    if (!_backgroundSafetyOn && _isMaleUser) {
+      AppSnackBar.show(
+        context,
+        'Audio monitoring is not available for male users.',
+        type: AppSnackBarType.warning,
+      );
+      return;
+    }
+
     if (_backgroundSafetyOn) {
-      // 🛑 STOP sharing
       await _safetyChannel.invokeMethod('stopService');
       await WebSocketService().close();
       await prefs.setBool('bg_safety_on', false);
@@ -95,7 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    // ▶️ START sharing → ask permissions first
+    // ▶️ start sharing → ask permissions first
     final mic = await Permission.microphone.request();
     final location = await Permission.location.request();
     final notifications = await Permission.notification.request();
@@ -108,7 +113,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     await _safetyChannel.invokeMethod('startService');
-    // open websocket when starting monitoring (native service sends audio from Kotlin)
+    // open websocket when starting monitoring (native service sends audio from kotlin)
     await WebSocketService().connect(_userId);
     await prefs.setBool('bg_safety_on', true);
 
@@ -123,7 +128,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadBackgroundSafetyState();
 
-    // ✅ Listen for service stop callback from native code
+    // ✅ listen for service stop callback from native code
     _safetyChannel.setMethodCallHandler((call) async {
       if (call.method == 'onServiceStopped') {
         if (mounted) {
@@ -185,9 +190,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // ======================================================
-  // AUTH GUARD
-  // ======================================================
   void _authGuard() {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final user = authProvider.currentUser;
@@ -197,14 +199,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ======================================================
-  // LOAD USER (CACHE -> BACKEND)
-  // ======================================================
+  // load user (cache -> backend)
   Future<void> _loadUserFromPrefsOrBackend() async {
     final prefs = await SharedPreferences.getInstance();
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final user = authProvider.currentUser;
     if (user == null) return;
+    _isMaleUser = user.gender.trim().toLowerCase() == 'male';
 
     final cachedName = prefs.getString("cached_user_name");
     final cachedEmail = prefs.getString("cached_user_email");
@@ -229,7 +230,6 @@ class _HomeScreenState extends State<HomeScreen> {
       await prefs.remove("cached_user_id");
     }
 
-    // ✅ fallback values instantly
     setState(() {
       _username = (user.username?.trim().isNotEmpty ?? false)
           ? user.username!.trim()
@@ -238,7 +238,6 @@ class _HomeScreenState extends State<HomeScreen> {
       _userId = user.id;
     });
 
-    // ✅ try backend fetch profile
     try {
       final profileJson = await ApiService.getProfile(user.id);
 
@@ -270,9 +269,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ======================================================
-  // TIMEOUT WATCHER
-  // ======================================================
   void _startTimeoutWatcher() {
     _timeoutTimer?.cancel();
     _timedOut = false;
@@ -291,9 +287,6 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  // ======================================================
-  // LOAD HOME DATA
-  // ======================================================
   Future<void> _loadHomeData({bool forceRefresh = false}) async {
     if (_userId == 0) return;
 
@@ -410,17 +403,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // ======================================================
-  // PULL-TO-REFRESH
-  // ======================================================
   Future<void> _onRefresh() async {
     await _loadUserFromPrefsOrBackend();
     await _loadHomeData(forceRefresh: true);
   }
 
-  // ======================================================
-  // BOTTOM MENU (5 options)
-  // ======================================================
   void _openBottomMenu() {
     showModalBottomSheet(
       context: context,
@@ -678,9 +665,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // CTA ROW (Always visible)
-  // ======================================================
   Widget _buildTopCTAs(BuildContext context) {
     return Row(
       children: [
@@ -691,6 +675,14 @@ class _HomeScreenState extends State<HomeScreen> {
             subtitle: "Cam + Mic",
             color: AppTheme.dangerColor,
             onTap: () {
+              if (_isMaleUser) {
+                AppSnackBar.show(
+                  context,
+                  'Anonymous recording is not available for male users.',
+                  type: AppSnackBarType.warning,
+                );
+                return;
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const AnonymousRecordingScreen()),
@@ -706,6 +698,14 @@ class _HomeScreenState extends State<HomeScreen> {
             subtitle: "With Cam",
             color: AppTheme.successColor,
             onTap: () {
+              if (_isMaleUser) {
+                AppSnackBar.show(
+                  context,
+                  'Fake call is not available for male users.',
+                  type: AppSnackBarType.warning,
+                );
+                return;
+              }
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const FakeCallScreen()),
@@ -717,9 +717,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // MINI ERROR BANNER (NOT FULL SCREEN)
-  // ======================================================
+  // mini error banner (not full screen)
   Widget _miniErrorBanner() {
     final bool isTimeout = _timedOut || _errorMessage.toLowerCase().contains("timeout");
 
@@ -759,9 +757,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // UI BUILD
-  // ======================================================
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
@@ -790,7 +785,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // ✅ CTA buttons visible
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: _buildTopCTAs(context),
@@ -798,13 +792,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const SizedBox(height: 14),
 
-                // ✅ mini error banner
                 if (_hasError && !_isLoading) ...[
                   _miniErrorBanner(),
                   const SizedBox(height: 14),
                 ],
 
-                // ✅ Safety Score card
                 if (_isLoading) const SafetyScoreSkeleton(),
                 if (!_isLoading && !_hasError && _safetyStats != null)
                   GestureDetector(
@@ -840,13 +832,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const SizedBox(height: 20),
 
-                // ✅ Quick Actions (show always)
+                // ✅ quick actions (show always)
                 if (_isLoading) const QuickActionsSkeleton(),
                 if (!_isLoading) _buildQuickActions(context),
 
                 const SizedBox(height: 20),
 
-                // ✅ Stats grid
                 if (_isLoading) const StatsGridSkeleton(),
                 if (!_isLoading && !_hasError && _safetyStats != null)
                   _buildStatsGridClickable(_safetyStats!),
@@ -868,7 +859,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 const SizedBox(height: 20),
 
-                // ✅ Recent Activity
                 if (_isLoading) const RecentActivitySkeleton(),
                 if (!_isLoading && !_hasError) _buildRecentActivity(),
                 if (!_isLoading && _hasError)
@@ -896,9 +886,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // HEADER
-  // ======================================================
   Widget _buildHeader(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
@@ -935,7 +922,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text('Welcome back,', style: Theme.of(context).textTheme.bodyMedium),
                   const SizedBox(height: 2),
                   Text(
-                    '$_username 👋',
+                    _username,
                     style: Theme.of(context).textTheme.titleLarge,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -980,9 +967,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // STATS GRID CLICKABLE
-  // ======================================================
   Widget _buildStatsGridClickable(SafetyStats data) {
     return Column(
       children: [
@@ -1064,9 +1048,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // QUICK ACTIONS
-  // ======================================================
   Widget _buildQuickActions(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 1),
@@ -1303,7 +1284,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  // color: color.withOpacity(0.1),
+                  // color: color.withopacity(0.1),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(icon, color: color, size: 24),
@@ -1325,9 +1306,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ======================================================
-  // RECENT ACTIVITY
-  // ======================================================
   Widget _buildRecentActivity() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1533,9 +1511,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ======================================================
-// CTA BUTTON WIDGET
-// ======================================================
 class _TopCTAButton extends StatelessWidget {
   final IconData icon;
   final String title;

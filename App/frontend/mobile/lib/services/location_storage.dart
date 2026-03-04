@@ -1,4 +1,4 @@
-// lib/services/location_storage.dart
+// App/frontend/mobile/lib/services/location_storage.dart
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LocationStorage {

@@ -1,7 +1,9 @@
+// App/frontend/mobile/lib/screens/profile_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:mobile/widgets/error_dialog.dart';
 import 'dart:convert';
 import 'dart:io';
@@ -30,7 +32,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   bool loading = true;
   String? errorMessage;
 
-  // backend values
   String name = "";
   String email = "";
   String phone = "";
@@ -97,7 +98,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       loading = false;
     }
 
-    // ✅ show cached profile first
     _loadProfileFromCache().then((_) {
       // ✅ fetch latest after showing cached
       _loadProfile(showLoader: !hasLocalData);
@@ -202,7 +202,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ..["name"] = mergedName
         ..["email"] = mergedEmail;
 
-      // ✅ save to cache
       await _saveProfileToCache(mergedProfile, contactsJson);
 
       if (!mounted) return;
@@ -253,8 +252,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
       if (!mounted) return;
 
-      // ✅ If we already have cached data, don't annoy user with popup.
-      // Only show popup if no cached data exists.
+      // ✅ if we already have cached data, don't annoy user with popup.
+      // only show popup if no cached data exists.
       if (!hasLocalData) {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final authUser = authProvider.currentUser;
@@ -281,7 +280,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     required bool notifications,
     required bool location,
   }) async {
-    // optimistic UI
     setState(() {
       notificationEnabled = notifications;
       locationSharing = location;
@@ -294,7 +292,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         locationSharing: location,
       );
     } catch (e) {
-      // rollback if failed
       setState(() {
         notificationEnabled = !notifications;
         locationSharing = !location;
@@ -432,11 +429,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     }
   }
 
+  Future<void> _callPhone(String phoneNumber) async {
+    final normalized = phoneNumber.trim();
+    if (normalized.isEmpty || normalized == 'N/A') return;
+
+    final uri = Uri.parse('tel:$normalized');
+    final launched = await launchUrl(uri);
+    if (!launched && mounted) {
+      AppSnackBar.show(context, 'Could not open dial pad', type: AppSnackBarType.error);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
 
-    // ✅ error UI
     if (!loading && errorMessage != null) {
       return Scaffold(
         backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -494,12 +501,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               opacity: _fade,
               child: Column(
                 children: [
-                  // ✅ TOP PROFILE HEADER
                   _buildHeader(themeProvider),
 
                   const SizedBox(height: 18),
 
-                  // ✅ STATS
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: loading
@@ -514,7 +519,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                   const SizedBox(height: 16),
 
-                  // ✅ SETTINGS CARD
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: loading
@@ -524,7 +528,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                   const SizedBox(height: 16),
 
-                  // ✅ CONTACTS CARD
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: loading
@@ -534,7 +537,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
                   const SizedBox(height: 16),
 
-                  // ✅ ACTIONS
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: loading
@@ -552,9 +554,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // =======================
-  // Header UI
-  // =======================
   Widget _buildHeader(ThemeProvider themeProvider) {
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 18, 18, 22),
@@ -574,7 +573,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       ),
       child: Column(
         children: [
-          // ✅ TOP ICONS ROW (settings + notifications)
+          // ✅ top icons row (settings + notifications)
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
@@ -600,7 +599,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
           const SizedBox(height: 4),
 
-          // ✅ Avatar + Edit
           Stack(
             alignment: Alignment.bottomRight,
             children: [
@@ -616,7 +614,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               ),
               InkWell(
                 onTap: () async {
-                  // ✅ open edit profile screen
                   final updated = await Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -709,7 +706,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
           const SizedBox(height: 12),
 
-          // ✅ Premium badge
           GestureDetector(
             onTap: isPremium
                 ? null
@@ -840,9 +836,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
 
-  // =======================
-  // Settings Card
-  // =======================
   Widget _buildSettingsCard(ThemeProvider themeProvider) {
     final txt = Theme.of(context).textTheme;
 
@@ -872,7 +865,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             onChanged: (v) => _updateSettings(notifications: v, location: locationSharing),
           ),
 
-          // Theme Toggle works already ✅
+          // theme toggle works already ✅
           _SwitchRow(
             icon: themeProvider.isDarkMode ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
             title: themeProvider.isDarkMode ? "Light Mode" : "Dark Mode",
@@ -880,7 +873,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             onChanged: (v) => themeProvider.toggleTheme(v),
           ),
 
-          // const SizedBox(height: 10),
           _OptionRow(
             icon: Icons.language_rounded,
             title: "Language",
@@ -921,9 +913,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // =======================
-  // Emergency Contacts Card
-  // =======================
   Widget _buildContactsCard() {
     final txt = Theme.of(context).textTheme;
 
@@ -976,6 +965,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
               name: name,
               phone: phone,
               isPrimary: primary,
+              onCall: () => _callPhone(phone),
               onSetPrimary: () => _setPrimary(id),
               onDelete: () => _deleteContact(id),
             );
@@ -1014,9 +1004,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         .pushNamedAndRemoveUntil("/login", (route) => false);
   }
 
-  // =======================
-  // Action Buttons
-  // =======================
   Widget _buildActionButtons() {
     return Column(
       children: [
@@ -1064,9 +1051,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
-  // ======================
-  // Skeleton
-  // ======================
   Widget _skeleton(BuildContext context, {required double height}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final base = isDark ? AppTheme.skeletonBaseDark : AppTheme.skeletonBaseLight;
@@ -1088,7 +1072,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   void _showApiErrorPopup(dynamic e) {
     final err = e.toString().toLowerCase();
 
-    // ✅ Timeout cases
     if (err.contains("timeout") ||
         err.contains("connection timed out") ||
         err.contains("timed out")) {
@@ -1102,7 +1085,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       return;
     }
 
-    // ✅ No Internet cases
     if (err.contains("socketexception") ||
         err.contains("failed host lookup") ||
         err.contains("network is unreachable") ||
@@ -1115,7 +1097,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       return;
     }
 
-    // ✅ Default server/unknown error
+    // ✅ default server/unknown error
     ErrorDialog.show(
       context: context,
       title: "Something went wrong",
@@ -1212,9 +1194,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
 }
 
-// ======================================================================
-// Stats Row Widget
-// ======================================================================
 class _StatsRow extends StatelessWidget {
   final int safeDays;
   final int sosUsed;
@@ -1286,9 +1265,6 @@ class _StatChip extends StatelessWidget {
   }
 }
 
-// ======================================================================
-// Switch Row
-// ======================================================================
 class _SwitchRow extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1318,7 +1294,7 @@ class _SwitchRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              // color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
+              // color: theme.of(context).primarycolor.withvalues(alpha: 0.12),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(icon, color: Theme.of(context).primaryColor, size: 20),
@@ -1338,9 +1314,6 @@ class _SwitchRow extends StatelessWidget {
   }
 }
 
-// ======================================================================
-// Option Row
-// ======================================================================
 class _OptionRow extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1371,7 +1344,7 @@ class _OptionRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                // color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
+                // color: theme.of(context).primarycolor.withvalues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(icon, color: Theme.of(context).primaryColor, size: 20),
@@ -1391,13 +1364,11 @@ class _OptionRow extends StatelessWidget {
   }
 }
 
-// ======================================================================
-// Contact Tile
-// ======================================================================
 class _ContactTile extends StatelessWidget {
   final String name;
   final String phone;
   final bool isPrimary;
+  final VoidCallback onCall;
   final VoidCallback onSetPrimary;
   final VoidCallback onDelete;
 
@@ -1405,6 +1376,7 @@ class _ContactTile extends StatelessWidget {
     required this.name,
     required this.phone,
     required this.isPrimary,
+    required this.onCall,
     required this.onSetPrimary,
     required this.onDelete,
   });
@@ -1463,6 +1435,11 @@ class _ContactTile extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            onPressed: onCall,
+            icon: const Icon(Icons.call_rounded),
+            tooltip: 'Call',
           ),
           PopupMenuButton(
             icon: Icon(Icons.more_vert_rounded, color: txt.bodySmall?.color?.withValues(alpha: 0.65)),

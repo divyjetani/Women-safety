@@ -1,4 +1,4 @@
-// lib/widgets/map_incognito_strip_right.dart
+// App/frontend/mobile/lib/widgets/map_incognito_strip_right.dart
 import 'package:flutter/material.dart';
 
 class MapIncognitoStripRight extends StatelessWidget {
@@ -103,7 +103,6 @@ class MapIncognitoStripRight extends StatelessWidget {
   }
 }
 
-/// 🔘 Custom icon toggle
 class _IconToggle extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;

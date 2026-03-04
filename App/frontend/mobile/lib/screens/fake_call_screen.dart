@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/fake_call_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -14,6 +15,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../app/theme.dart';
 import '../services/api_service.dart';
+import '../widgets/app_snackbar.dart';
 
 class FakeCallScreen extends StatefulWidget {
   const FakeCallScreen({super.key});
@@ -23,22 +25,24 @@ class FakeCallScreen extends StatefulWidget {
 }
 
 class _FakeCallScreenState extends State<FakeCallScreen> {
-  // ✅ Fake contacts (local)
   List<Map<String, dynamic>> fakeContacts = [];
 
-  // ✅ Recordings list (local)
   List<Map<String, dynamic>> _fakeCallRecordings = [];
+  bool _isProcessingEndedCall = false;
+  bool _isSyncingRemote = false;
 
   @override
   void initState() {
     super.initState();
     _loadFakeContacts();
-    _loadRecordings();
+    _initRecordingData();
   }
 
-  // =========================
-  // CONTACTS
-  // =========================
+  Future<void> _initRecordingData() async {
+    await _loadRecordings();
+    await _syncRecordingsFromBackend();
+  }
+
   Future<void> _loadFakeContacts() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString("fake_contacts");
@@ -146,9 +150,6 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
     await _saveContacts();
   }
 
-  // =========================
-  // RECORDINGS LIST SAVE/LOAD
-  // =========================
   Future<void> _loadRecordings() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString("fakecall_recordings_list") ?? "[]";
@@ -164,9 +165,113 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
     await prefs.setString("fakecall_recordings_list", jsonEncode(_fakeCallRecordings));
   }
 
-  // =========================
-  // START FAKE CALL (Incoming)
-  // =========================
+  Future<String> _cacheRemoteFile({
+    required String url,
+    required String folderName,
+    required String fallbackFileName,
+  }) async {
+    if (url.trim().isEmpty) return "";
+
+    try {
+      final uri = Uri.parse(url);
+      final candidateName = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : fallbackFileName;
+      final fileName = candidateName.isEmpty ? fallbackFileName : candidateName;
+
+      final dir = await getApplicationDocumentsDirectory();
+      final folder = Directory("${dir.path}/$folderName");
+      if (!await folder.exists()) {
+        await folder.create(recursive: true);
+      }
+
+      final outPath = "${folder.path}/$fileName";
+      final outFile = File(outPath);
+      if (await outFile.exists()) return outPath;
+
+      final bytes = await ApiService.downloadMediaBytes(url);
+      await outFile.writeAsBytes(bytes, flush: true);
+      return outPath;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  Future<void> _syncRecordingsFromBackend() async {
+    if (_isSyncingRemote) return;
+
+    setState(() => _isSyncingRemote = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt("cached_user_id") ?? 1;
+      final history = await ApiService.fetchFakeCallRecordingHistory(userId: userId);
+
+      final List<Map<String, dynamic>> synced = [];
+      for (final item in history) {
+        final id = (item["id"] ?? DateTime.now().millisecondsSinceEpoch).toString();
+        final files = Map<String, dynamic>.from(item["files"] ?? {});
+
+        final backMeta = Map<String, dynamic>.from(files["back_video"] ?? {});
+        final startMeta = Map<String, dynamic>.from(files["start_image"] ?? {});
+        final endMeta = Map<String, dynamic>.from(files["end_image"] ?? {});
+
+        final backLocal = await _cacheRemoteFile(
+          url: (backMeta["url"] ?? "").toString(),
+          folderName: "fakecall_videos_cache",
+          fallbackFileName: "${id}_back.mp4",
+        );
+
+        final startLocal = await _cacheRemoteFile(
+          url: (startMeta["url"] ?? "").toString(),
+          folderName: "fakecall_images_cache",
+          fallbackFileName: "${id}_start.jpg",
+        );
+
+        final endLocal = await _cacheRemoteFile(
+          url: (endMeta["url"] ?? "").toString(),
+          folderName: "fakecall_images_cache",
+          fallbackFileName: "${id}_end.jpg",
+        );
+
+        final hasVideo = backLocal.isNotEmpty;
+
+        synced.add({
+          "id": id,
+          "serverRecordingId": id,
+          "startedAt": item["started_at"] ?? "",
+          "endedAt": item["ended_at"] ?? "",
+          "duration": item["duration_seconds"] ?? 0,
+          "backVideoPath": backLocal,
+          "startImagePath": startLocal,
+          "endImagePath": endLocal,
+          "startLat": (item["start_location"]?['lat'] ?? "").toString(),
+          "startLng": (item["start_location"]?['lng'] ?? "").toString(),
+          "endLat": (item["end_location"]?['lat'] ?? "").toString(),
+          "endLng": (item["end_location"]?['lng'] ?? "").toString(),
+          "uploadStatus": hasVideo ? "uploaded" : "failed",
+          "lastError": hasVideo ? "" : "Recording details found, but video file is missing on server.",
+          "source": "remote",
+        });
+      }
+
+      final localPending = _fakeCallRecordings.where((r) {
+        final status = (r["uploadStatus"] ?? "").toString();
+        final source = (r["source"] ?? "local").toString();
+        return source != "remote" && status != "uploaded";
+      }).toList();
+
+      final merged = <Map<String, dynamic>>[...synced, ...localPending];
+
+      if (!mounted) return;
+      setState(() => _fakeCallRecordings = merged);
+      await _saveRecordings();
+    } catch (_) {
+      // keep local cache when backend sync fails
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingRemote = false);
+      }
+    }
+  }
+
   void _startFakeCall(Map<String, dynamic> contact) async {
     final result = await Navigator.push<Map<String, dynamic>?>(
       context,
@@ -178,22 +283,22 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
       ),
     );
 
-    // ✅ If recording object returned, add it to list
+    // ✅ if recording object returned, add it to list
     if (result != null) {
+      setState(() => _isProcessingEndedCall = true);
       setState(() => _fakeCallRecordings.insert(0, result));
       await _saveRecordings();
 
       final videoPath = (result["backVideoPath"] ?? "") as String;
       if (videoPath.isNotEmpty && await File(videoPath).exists()) {
-        // ✅ upload in background-like
         await _uploadFakeCallRecording(result);
+      }
+      if (mounted) {
+        setState(() => _isProcessingEndedCall = false);
       }
     }
   }
 
-  // =========================
-  // UPLOAD + RETRY
-  // =========================
   Future<void> _uploadFakeCallRecording(Map<String, dynamic> item) async {
     final idx = _fakeCallRecordings.indexWhere((r) => r["id"] == item["id"]);
     if (idx == -1) return;
@@ -213,7 +318,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
         throw Exception("Required media files not found for upload");
       }
 
-      await ApiService.uploadFakeCallRecording(
+      final response = await ApiService.uploadFakeCallRecording(
         userId: userId,
         backVideoPath: normalized["backVideoPath"]!,
         startImagePath: normalized["startImagePath"]!,
@@ -227,9 +332,14 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
         endLng: item["endLng"],
       );
 
+      final serverId = (response["recording"]?['id'] ?? "").toString();
+
       setState(() {
         _fakeCallRecordings[idx]["uploadStatus"] = "uploaded";
         _fakeCallRecordings[idx]["lastError"] = "";
+        if (serverId.isNotEmpty) {
+          _fakeCallRecordings[idx]["serverRecordingId"] = serverId;
+        }
       });
       await _saveRecordings();
     } catch (e) {
@@ -272,11 +382,66 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
     };
   }
 
-  // =========================
-  // DELETE RECORDING
-  // =========================
+  Future<String> _resolveServerRecordingId(Map<String, dynamic> record) async {
+    final explicit = (record["serverRecordingId"] ?? "").toString().trim();
+    if (explicit.isNotEmpty) return explicit;
+
+    final idValue = (record["id"] ?? "").toString().trim();
+    if (idValue.startsWith("user")) return idValue;
+    return "";
+  }
+
+  Future<void> _showSnack(String message, {AppSnackBarType type = AppSnackBarType.info}) async {
+    if (!mounted) return;
+    AppSnackBar.show(context, message, type: type);
+  }
+
+  Future<void> _deleteRecordingWithConfirmation(int index) async {
+    if (index < 0 || index >= _fakeCallRecordings.length) return;
+
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text("Delete recording?"),
+          content: const Text(
+            "This will remove the recording from your phone cache and server history (if uploaded).",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text("Delete"),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) return;
+    await _deleteRecording(index);
+  }
+
   Future<void> _deleteRecording(int index) async {
     final r = _fakeCallRecordings[index];
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getInt("cached_user_id") ?? 1;
+      final serverRecordingId = await _resolveServerRecordingId(r);
+      if (serverRecordingId.isNotEmpty) {
+        await ApiService.deleteFakeCallRecording(
+          userId: userId,
+          recordingId: serverRecordingId,
+        );
+      }
+    } catch (e) {
+      await _showSnack("Could not delete from server: $e", type: AppSnackBarType.error);
+      return;
+    }
 
     Future<void> safeDelete(String path) async {
       try {
@@ -300,9 +465,6 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
     return AppTheme.warningColor;
   }
 
-  // =========================
-  // UI
-  // =========================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -310,11 +472,12 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
         title: const Text("Fake Call"),
         centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // ✅ Header info
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
@@ -337,7 +500,6 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ✅ Contacts list
             fakeContacts.isEmpty
                 ? const Center(child: Text("No fake contacts added"))
                 : ListView.builder(
@@ -427,7 +589,6 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
 
             SizedBox(height: 10,),
 
-            // ✅ Add contact
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -445,7 +606,6 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
 
             const SizedBox(height: 16),
 
-            // ✅ Recording List Section
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
@@ -453,6 +613,16 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
               ),
             ),
+            if (_isSyncingRemote) ...[
+              const SizedBox(height: 6),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Syncing recordings from server...",
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
 
             Expanded(
@@ -463,6 +633,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                 itemBuilder: (context, i) {
                   final r = _fakeCallRecordings[i];
                   final status = r["uploadStatus"] ?? "pending";
+                  final canPlayVideo = (r["backVideoPath"] ?? "").toString().isNotEmpty && File((r["backVideoPath"] ?? "").toString()).existsSync();
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 10),
@@ -499,7 +670,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                               child: OutlinedButton.icon(
                                 icon: const Icon(Icons.play_circle_outline_rounded),
                                 label: const Text("Video"),
-                                onPressed: () {
+                                onPressed: canPlayVideo ? () {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
@@ -508,7 +679,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                                       ),
                                     ),
                                   );
-                                },
+                                } : null,
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -529,6 +700,16 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                             ),
                           ],
                         ),
+                        if (!canPlayVideo) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            "Video file not available for this record.",
+                            style: TextStyle(
+                              color: AppTheme.dangerColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                         if (status == "failed") ...[
                           const SizedBox(height: 8),
                           Text(
@@ -553,7 +734,7 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                           child: TextButton.icon(
                             icon: const Icon(Icons.delete_outline_rounded),
                             label: const Text("Delete"),
-                            onPressed: () => _deleteRecording(i),
+                            onPressed: () => _deleteRecordingWithConfirmation(i),
                             style: TextButton.styleFrom(
                               foregroundColor: AppTheme.dangerColor,
                             ),
@@ -565,16 +746,33 @@ class _FakeCallScreenState extends State<FakeCallScreen> {
                 },
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          ),
+          if (_isProcessingEndedCall)
+            Container(
+              color: Colors.black.withValues(alpha: 0.35),
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 12),
+                    Text(
+                      'Processing call recording...',
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
-/// ============================================================
-/// ✅ Incoming Call Screen (rings)
-/// ============================================================
+// / ✅ incoming call screen (rings)
 class FakeIncomingCallScreen extends StatefulWidget {
   final String name;
   final String number;
@@ -698,9 +896,7 @@ class _FakeIncomingCallScreenState extends State<FakeIncomingCallScreen> {
   }
 }
 
-/// ============================================================
-/// ✅ Running Call Screen (records back cam silently)
-/// ============================================================
+// / ✅ running call screen (records back cam silently)
 class FakeCallRunningScreen extends StatefulWidget {
   final String name;
   final String number;
@@ -715,16 +911,13 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
   Timer? _callTimer;
   int _seconds = 0;
 
-  // ✅ proximity
   StreamSubscription<int>? _proxSub;
   bool _nearEar = false;
 
-  // ✅ camera record back cam
   CameraController? _camera;
   bool _cameraReady = false;
   XFile? _videoFile;
 
-  // ✅ start/end info
   Position? _startPos;
   Position? _endPos;
   String _startedAt = "";
@@ -734,7 +927,6 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
   String _endImagePath = "";
   String _backVideoPath = "";
   bool _recordingStarted = false;
-  Future<void>? _cameraStartFuture;
   bool _endingCall = false;
 
   @override
@@ -742,7 +934,7 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
     super.initState();
     _startedAt = DateTime.now().toIso8601String();
     _listenProximity();
-    _cameraStartFuture = _initBackCameraAndStartRecording();
+    _initBackCameraAndStartRecording();
   }
 
   @override
@@ -879,17 +1071,11 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
     if (_endingCall) return;
     _endingCall = true;
 
-    try {
-      if (_cameraStartFuture != null) {
-        await _cameraStartFuture!.timeout(const Duration(seconds: 2));
-      }
-    } catch (_) {}
-
     final hasVideo = await _stopRecordingIfNeeded();
 
     final now = DateTime.now();
 
-    // ✅ Recording object return to FakeCallScreen
+    // ✅ recording object return to fakecallscreen
     final recording = {
       "id": now.millisecondsSinceEpoch,
       "startedAt": _startedAt,
@@ -935,7 +1121,6 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
 
                   const SizedBox(height: 20),
 
-                  // ✅ show "recording feel"
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
@@ -954,7 +1139,6 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
 
                   const Spacer(),
 
-                  // call controls
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
@@ -1015,9 +1199,6 @@ class _FakeCallRunningScreenState extends State<FakeCallRunningScreen> {
   }
 }
 
-/// ============================================================
-/// ✅ Single Video Player
-/// ============================================================
 class SingleVideoPlayerScreen extends StatefulWidget {
   final String path;
   const SingleVideoPlayerScreen({super.key, required this.path});
@@ -1028,6 +1209,7 @@ class SingleVideoPlayerScreen extends StatefulWidget {
 
 class _SingleVideoPlayerScreenState extends State<SingleVideoPlayerScreen> {
   VideoPlayerController? _controller;
+  String _error = "";
 
   @override
   void initState() {
@@ -1042,19 +1224,39 @@ class _SingleVideoPlayerScreenState extends State<SingleVideoPlayerScreen> {
   }
 
   Future<void> _load() async {
-    final c = VideoPlayerController.file(File(widget.path));
-    await c.initialize();
-    await c.setLooping(true);
-    await c.play();
+    try {
+      if (widget.path.isEmpty || !await File(widget.path).exists()) {
+        if (!mounted) return;
+        setState(() => _error = "Video file not found on device.");
+        return;
+      }
 
-    if (!mounted) return;
-    setState(() => _controller = c);
+      final c = VideoPlayerController.file(File(widget.path));
+      await c.initialize();
+      await c.setLooping(true);
+      await c.play();
+
+      if (!mounted) return;
+      setState(() => _controller = c);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _error = "Unable to play this recording.");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_controller == null) {
+    if (_controller == null && _error.isEmpty) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    if (_controller == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Recording Video"),
+          centerTitle: true,
+        ),
+        body: Center(child: Text(_error)),
+      );
     }
 
     return Scaffold(
@@ -1072,9 +1274,7 @@ class _SingleVideoPlayerScreenState extends State<SingleVideoPlayerScreen> {
   }
 }
 
-/// ============================================================
-/// ✅ Location Screen (start/end + images)
-/// ============================================================
+// / ✅ location screen (start/end + images)
 class RecordingLocationScreen extends StatelessWidget {
   final Map<String, dynamic> recording;
 

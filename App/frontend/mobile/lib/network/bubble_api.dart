@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/network/bubble_api.dart
 import 'package:dio/dio.dart';
 import 'package:mobile/conn_url.dart';
 import 'dio_client.dart';
@@ -5,7 +6,7 @@ import 'dio_client.dart';
 class BubbleApi {
   static final Dio _dio = DioClient.create(baseUrl: ApiUrls.baseUrl);
 
-  /// ✅ FastAPI: POST /groups/{groupId}/sos
+  // / ✅ fastapi: post /groups/{groupid}/sos
   static Future<void> sendSosToBubble({
     required String userId,
     required String username,
@@ -25,7 +26,7 @@ class BubbleApi {
     await _dio.post("/groups/$groupId/sos", data: payload);
   }
 
-  /// ✅ FastAPI: POST /groups/{groupId}/share
+  // / ✅ fastapi: post /groups/{groupid}/share
   static Future<void> shareLiveToBubble({
     required String userId,
     required double lat,

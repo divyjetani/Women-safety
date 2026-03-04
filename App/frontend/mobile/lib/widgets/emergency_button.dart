@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/emergency_button.dart
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 import 'app_snackbar.dart';
@@ -29,7 +30,6 @@ class _EmergencyButtonState extends State<EmergencyButton>
   }
 
   void _startEmergency() {
-    // Implement emergency action
     AppSnackBar.show(
       context,
       'Emergency alert sent to contacts and police!',
@@ -45,7 +45,6 @@ class _EmergencyButtonState extends State<EmergencyButton>
     });
     _controller.repeat(reverse: true);
 
-    // Start countdown
     Future.delayed(const Duration(seconds: 1), () {
       if (_isPressed) {
         setState(() => _countdown = 2);

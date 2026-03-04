@@ -1,4 +1,4 @@
-// widgets/error_dialog.dart
+// App/frontend/mobile/lib/widgets/error_dialog.dart
 import 'package:flutter/material.dart';
 import '../app/theme.dart';
 

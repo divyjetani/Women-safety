@@ -1,4 +1,4 @@
-// lib/providers/bubble_provider.dart
+// App/frontend/mobile/lib/providers/bubble_provider.dart
 import 'package:flutter/material.dart';
 import 'package:mobile/models/bubble_model.dart';
 import 'package:mobile/services/bubble_api.dart';
@@ -10,19 +10,17 @@ class BubbleProvider extends ChangeNotifier {
   String? _error;
   int _userId = 1; // TODO: Get from auth
 
-  // Getters
   List<Bubble> get bubbles => _bubbles;
   Bubble? get currentBubble => _currentBubble;
   bool get isLoading => _isLoading;
   String? get error => _error;
   int get userId => _userId;
 
-  // ✅ SET USER ID (from auth service)
+  // ✅ set user id (from auth service)
   void setUserId(int userId) {
     _userId = userId;
   }
 
-  // ✅ CREATE BUBBLE
   Future<Bubble?> createBubble({
     required String name,
     required int icon,
@@ -57,7 +55,6 @@ class BubbleProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ JOIN BUBBLE
   Future<Bubble?> joinBubble({
     required String code,
     required String userName,
@@ -73,7 +70,6 @@ class BubbleProvider extends ChangeNotifier {
         userName: userName,
       );
 
-      // Check if already in list
       final index = _bubbles.indexWhere((b) => b.code == bubble.code);
       if (index >= 0) {
         _bubbles[index] = bubble;
@@ -95,7 +91,7 @@ class BubbleProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ FETCH ALL BUBBLES FOR USER
+  // ✅ fetch all bubbles for user
   Future<void> fetchUserBubbles() async {
     _isLoading = true;
     _error = null;
@@ -114,7 +110,6 @@ class BubbleProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ GET BUBBLE BY CODE
   Future<Bubble?> getBubble(String code) async {
     _isLoading = true;
     _error = null;
@@ -135,11 +130,10 @@ class BubbleProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ UPDATE CURRENT BUBBLE (from WebSocket updates)
+  // ✅ update current bubble (from websocket updates)
   void updateCurrentBubble(Bubble bubble) {
     _currentBubble = bubble;
 
-    // Update in list
     final index = _bubbles.indexWhere((b) => b.code == bubble.code);
     if (index >= 0) {
       _bubbles[index] = bubble;
@@ -148,13 +142,11 @@ class BubbleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ✅ SET CURRENT BUBBLE
   void setCurrentBubble(Bubble? bubble) {
     _currentBubble = bubble;
     notifyListeners();
   }
 
-  // ✅ DELETE BUBBLE
   Future<bool> deleteBubble(String code) async {
     _isLoading = true;
     _error = null;
@@ -180,7 +172,6 @@ class BubbleProvider extends ChangeNotifier {
     }
   }
 
-  // ✅ CLEAR ERROR
   void clearError() {
     _error = null;
     notifyListeners();

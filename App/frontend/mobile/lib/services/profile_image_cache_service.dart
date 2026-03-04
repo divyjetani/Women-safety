@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/services/profile_image_cache_service.dart
 import 'dart:convert';
 import 'dart:io';
 
@@ -106,7 +107,6 @@ class ProfileImageCacheService {
         return target.path;
       }
     } catch (_) {
-      // best effort
     }
 
     return await getLocalPath(userId);

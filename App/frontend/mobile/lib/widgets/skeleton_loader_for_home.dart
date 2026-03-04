@@ -1,4 +1,4 @@
-// widgets/skeleton_loader.dart
+// App/frontend/mobile/lib/widgets/skeleton_loader_for_home.dart
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../app/theme.dart';
@@ -41,9 +41,6 @@ class SkeletonLoader extends StatelessWidget {
   }
 }
 
-// =======================================================
-// ✅ Safety Score Skeleton
-// =======================================================
 class SafetyScoreSkeleton extends StatelessWidget {
   const SafetyScoreSkeleton({super.key});
 
@@ -97,9 +94,6 @@ class SafetyScoreSkeleton extends StatelessWidget {
   }
 }
 
-// =======================================================
-// ✅ Stats Grid Skeleton
-// =======================================================
 class StatsGridSkeleton extends StatelessWidget {
   const StatsGridSkeleton({super.key});
 
@@ -160,9 +154,6 @@ class StatsGridSkeleton extends StatelessWidget {
   }
 }
 
-// =======================================================
-// ✅ Recent Activity Skeleton
-// =======================================================
 class RecentActivitySkeleton extends StatelessWidget {
   const RecentActivitySkeleton({super.key});
 
@@ -228,9 +219,6 @@ class RecentActivitySkeleton extends StatelessWidget {
   }
 }
 
-// =======================================================
-// ✅ Quick Actions Skeleton
-// =======================================================
 class QuickActionsSkeleton extends StatelessWidget {
   const QuickActionsSkeleton({super.key});
 

@@ -1,4 +1,4 @@
-// lib/screens/bubbles_list_screen.dart
+// App/frontend/mobile/lib/screens/bubbles_list_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/providers/bubble_provider.dart';
@@ -18,7 +18,6 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
   @override
   void initState() {
     super.initState();
-    // Load bubbles on screen init
     Future.microtask(() {
       context.read<BubbleProvider>().fetchUserBubbles();
     });
@@ -75,10 +74,8 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ✅ HEADER
                           Row(
                             children: [
-                              // Bubble Icon
                               Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
@@ -93,7 +90,6 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                               ),
                               const SizedBox(width: 12),
 
-                              // Bubble Name
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,7 +116,6 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                                 ),
                               ),
 
-                              // Admin badge
                               if (isAdmin)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
@@ -145,7 +140,6 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                           const Divider(color: Color(0xFF2A3540)),
                           const SizedBox(height: 12),
 
-                          // ✅ MEMBERS INFO
                           Row(
                             children: [
                               Icon(
@@ -163,7 +157,6 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                               ),
                               const SizedBox(width: 16),
 
-                              // Active members
                               Icon(
                                 Icons.location_on,
                                 size: 16,
@@ -227,7 +220,7 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
                               ),
                           ],
 
-                          // ✅ DELETE BUTTON (ADMIN ONLY)
+                          // ✅ delete button (admin only)
                           if (isAdmin) ...[
                             const SizedBox(height: 12),
                             SizedBox(
@@ -324,7 +317,6 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
     );
   }
 
-  // ✅ EMPTY STATE
   Widget _buildEmptyState(BuildContext context) {
     return Center(
       child: Column(
@@ -382,7 +374,7 @@ class _BubblesListScreenState extends State<BubblesListScreen> {
     );
   }
 
-  // ✅ DELETE CONFIRMATION DIALOG
+  // ✅ delete confirmation dialog
   void _showDeleteConfirmation(BuildContext context, String code) {
     showDialog(
       context: context,

@@ -1,4 +1,4 @@
-// lib/screens/create_bubble_screen.dart
+// App/frontend/mobile/lib/screens/create_bubble_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/models/bubble_model.dart';
@@ -45,7 +45,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
     super.dispose();
   }
 
-  // ✅ CREATE BUBBLE
   Future<void> _createBubble() async {
     if (_bubbleNameController.text.isEmpty) {
       setState(() => _errorMessage = 'Please enter a bubble name');
@@ -85,7 +84,7 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
           type: AppSnackBarType.success,
         );
 
-        // Navigate to bubble members screen
+        // navigate to bubble members screen
         Navigator.pop(context, bubble);
       }
     } catch (e) {
@@ -113,7 +112,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ✅ HEADER
             const Text(
               'Create Your Safety Bubble',
               style: TextStyle(
@@ -132,7 +130,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
             ),
             const SizedBox(height: 32),
 
-            // ✅ BUBBLE NAME INPUT
             const Text(
               'Bubble Name',
               style: TextStyle(
@@ -167,7 +164,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
             ),
             const SizedBox(height: 24),
 
-            // ✅ SELECT ICON
             const Text(
               'Select Icon',
               style: TextStyle(
@@ -209,7 +205,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
             ),
             const SizedBox(height: 24),
 
-            // ✅ SELECT COLOR
             const Text(
               'Select Color',
               style: TextStyle(
@@ -270,7 +265,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
             ),
             const SizedBox(height: 24),
 
-            // ✅ ERROR MESSAGE
             if (_errorMessage != null)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -289,7 +283,6 @@ class _CreateBubbleScreenState extends State<CreateBubbleScreen> {
               ),
             const SizedBox(height: 24),
 
-            // ✅ CREATE BUTTON
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(

@@ -1,4 +1,4 @@
-// lib/services/bubble_websocket_service.dart
+// App/frontend/mobile/lib/services/bubble_websocket_service.dart
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:web_socket_channel/status.dart' as status;
@@ -28,7 +28,7 @@ class BubbleWebSocketService {
 
   bool get isConnected => _isConnected;
 
-  // ✅ CONNECT TO BUBBLE WEBSOCKET
+  // ✅ connect to bubble websocket
   Future<void> connect() async {
     try {
       final baseUrl = ApiUrls.baseUrl;
@@ -39,7 +39,6 @@ class BubbleWebSocketService {
       _isConnected = true;
       onConnectionChanged?.call(true);
 
-      // Listen to incoming messages
       _channel.stream.listen(
         (message) {
           _handleMessage(message);
@@ -62,7 +61,7 @@ class BubbleWebSocketService {
     }
   }
 
-  // ✅ HANDLE INCOMING WEBSOCKET MESSAGES
+  // ✅ handle incoming websocket messages
   void _handleMessage(dynamic message) {
     try {
       final data = jsonDecode(message);
@@ -79,14 +78,12 @@ class BubbleWebSocketService {
             .toList();
         onLocationUpdate?.call(members);
       } else if (type == 'pong') {
-        // Handle pong for keep-alive
       }
     } catch (e) {
       onError?.call('Message parse error: $e');
     }
   }
 
-  // ✅ SHARE LOCATION UPDATE
   void shareLocation({
     required double lat,
     required double lng,
@@ -109,7 +106,6 @@ class BubbleWebSocketService {
     }
   }
 
-  // ✅ KEEP-ALIVE PING
   void sendPing() {
     if (!_isConnected) return;
 
@@ -122,7 +118,6 @@ class BubbleWebSocketService {
     }
   }
 
-  // ✅ DISCONNECT
   Future<void> disconnect() async {
     try {
       _isConnected = false;

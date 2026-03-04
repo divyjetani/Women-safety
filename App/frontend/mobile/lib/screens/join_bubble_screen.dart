@@ -1,4 +1,4 @@
-// lib/screens/join_bubble_screen.dart
+// App/frontend/mobile/lib/screens/join_bubble_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/models/bubble_model.dart';
@@ -24,7 +24,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
     super.dispose();
   }
 
-  // ✅ JOIN BUBBLE WITH CODE
   Future<void> _joinBubble() async {
     final code = _codeController.text.trim().toUpperCase();
 
@@ -94,7 +93,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ✅ HEADER
             const Text(
               'Join a Safety Bubble',
               style: TextStyle(
@@ -113,7 +111,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
             ),
             const SizedBox(height: 48),
 
-            // ✅ ILLUSTRATION
             Center(
               child: Container(
                 padding: const EdgeInsets.all(32),
@@ -129,7 +126,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
             ),
             const SizedBox(height: 48),
 
-            // ✅ CODE INPUT
             const Text(
               'Enter Bubble Code',
               style: TextStyle(
@@ -178,7 +174,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
             ),
             const SizedBox(height: 24),
 
-            // ✅ SUCCESS MESSAGE
             if (_successMessage != null)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -197,7 +192,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
                 ),
               ),
 
-            // ✅ ERROR MESSAGE
             if (_errorMessage != null)
               Container(
                 padding: const EdgeInsets.all(12),
@@ -216,7 +210,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
               ),
             const SizedBox(height: 24),
 
-            // ✅ JOIN BUTTON
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
@@ -250,7 +243,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ✅ DIVIDER
             Row(
               children: [
                 Expanded(child: Divider(color: Colors.grey.shade700)),
@@ -270,7 +262,6 @@ class _JoinBubbleScreenState extends State<JoinBubbleScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ✅ CREATE NEW BUTTON
             SizedBox(
               width: double.infinity,
               child: OutlinedButton(

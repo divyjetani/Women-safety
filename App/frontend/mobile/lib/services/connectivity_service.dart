@@ -1,4 +1,4 @@
-// app/connectivity_service.dart
+// App/frontend/mobile/lib/services/connectivity_service.dart
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 class ConnectivityService {

@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/services/group_api.dart
 import 'package:dio/dio.dart';
 
 class GroupApi {
@@ -26,7 +27,6 @@ class GroupApi {
     return res.data;
   }
 
-  /// ✅ bubble sharing endpoint
   Future<Map<String, dynamic>> share({
     required String groupId,
     required String userId,
@@ -45,13 +45,12 @@ class GroupApi {
     return res.data as Map<String, dynamic>;
   }
 
-  /// ✅ Get latest shares of all members in group
+  // / ✅ get latest shares of all members in group
   Future<List<dynamic>> getLatestShares(String groupId) async {
     final res = await dio.get("/groups/$groupId/latest");
     return res.data["latest"] as List<dynamic>;
   }
 
-  /// ✅ bubble SOS endpoint
   Future<Map<String, dynamic>> sos({
     required String groupId,
     required String userId,

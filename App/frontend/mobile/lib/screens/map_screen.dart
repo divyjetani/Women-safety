@@ -1,4 +1,4 @@
-// lib/screens/map_screen.dart
+// App/frontend/mobile/lib/screens/map_screen.dart
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -81,21 +81,18 @@ class _MapScreenState extends State<MapScreen> {
   Map<String, dynamic>? _nearestPoliceStation;
   bool _loadingNearestPolice = false;
 
-  // map modes
   MapType _mapType = MapType.normal;
 
-  // incognito
   bool _incognito = false;
 
-  // groups
   late List<SafetyGroup> _groups;
   SafetyGroup? _currentGroup;
 
-  // WebSocket for location sharing
+  // websocket for location sharing
   BubbleWebSocketService? _wsService;
   final Battery _battery = Battery();
 
-  // for periodic location updates via WebSocket
+  // for periodic location updates via websocket
   Timer? _locationTimer;
   bool _locationServiceWarningShown = false;
   bool _locationPermissionWarningShown = false;
@@ -138,28 +135,8 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
 
-    // Static bubble commented out - use dynamic bubbles from backend
-    // _groups = [
-    //   SafetyGroup(
-    //     id: "1",
-    //     name: "Family",
-    //     members: [
-    //       GroupMember(
-    //         id: "u1",
-    //         name: "Divy",
-    //         lat: 23.6145,
-    //         lng: 72.2098,
-    //       ),
-    //       GroupMember(
-    //         id: "u2",
-    //         name: "Mom",
-    //         lat: 23.6129,
-    //         lng: 72.2080,
-    //       ),
-    //     ],
-    //   ),
-    // ];
-    // _currentGroup = _groups.first;
+    // static bubble commented out - use dynamic bubbles from backend
+    // _currentgroup = _groups.first;
     
     _groups = [];
 
@@ -178,7 +155,6 @@ class _MapScreenState extends State<MapScreen> {
     final savedIncognito = prefs.getBool('incognito_mode') ?? false;
     setState(() => _incognito = savedIncognito);
 
-    // ✅ Fetch groups from backend
     try {
       final backendGroups = await ApiService.getUserBubbles();
       final selectedId = await GroupStorage.loadSelectedGroup();
@@ -195,13 +171,12 @@ class _MapScreenState extends State<MapScreen> {
         }
       });
 
-      // Save to local storage
       await GroupStorage.saveGroups(backendGroups);
       if (_currentGroup != null) {
         await GroupStorage.saveSelectedGroup(_currentGroup!.id);
       }
     } catch (e) {
-      // Fallback to stored groups if backend fails
+      // fallback to stored groups if backend fails
       final storedGroups = await GroupStorage.loadGroups();
       final selectedId = await GroupStorage.loadSelectedGroup();
 
@@ -224,22 +199,21 @@ class _MapScreenState extends State<MapScreen> {
       setState(() => _myLocation = LatLng(last["lat"]!, last["lng"]!));
     }
 
-    // ✅ now try real location
     await _goToMyLocation(showSnackOnFail: false);
     await _loadNearestPoliceStation();
 
     setState(() => _loadingLocation = false);
 
-    // ✅ start WebSocket location sharing
+    // ✅ start websocket location sharing
     _startLocationSharing();
     await _updateMarkers();
   }
 
-  /// ✅ Start both WebSocket and background location sharing
+  // / ✅ start both websocket and background location sharing
   void _startLocationSharing() async {
     _startWebSocketSharing();
     
-    // Also start background location sharing
+    // also start background location sharing
     final group = _currentGroup;
     if (group == null || group.code == null) return;
 
@@ -326,18 +300,16 @@ class _MapScreenState extends State<MapScreen> {
       final user = await ApiService.getCurrentUser();
       if (user == null) return;
 
-      // Initialize WebSocket
       _wsService = BubbleWebSocketService(
         bubbleCode: group.code!,
         userId: user.id,
       );
 
-      // Set up callbacks
       _wsService!.onLocationUpdate = (members) {
         if (!mounted) return;
         
         setState(() {
-          // Update current group members with new locations
+          // update current group members with new locations
           if (_currentGroup != null) {
             final updatedMembers = members.map((m) {
               return GroupMember(
@@ -370,10 +342,9 @@ class _MapScreenState extends State<MapScreen> {
         print('WebSocket connection: $connected');
       };
 
-      // Connect
       await _wsService!.connect();
 
-      // Start periodic location updates via WebSocket
+      // start periodic location updates via websocket
       _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
         try {
           final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -475,7 +446,6 @@ class _MapScreenState extends State<MapScreen> {
       await GroupStorage.saveSelectedGroup(matched.first.id);
       await _updateMarkers();
     } catch (_) {
-      // best-effort refresh only
     }
   }
 
@@ -593,10 +563,8 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _updateMarkers() async {
     final Set<Marker> newMarkers = {};
     
-    // Get current user
     final user = await ApiService.getCurrentUser();
 
-    // 🔵 My location
     if (_myLocation != null && user != null) {
       final myIcon = await _myPointerMarker(
         user.username[0].toUpperCase(),
@@ -614,27 +582,26 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
 
-    // 🟢 Bubble members (exclude current user)
     if (_currentGroup != null && user != null) {
-      // Use bubble's color if available, otherwise use green
+      // use bubble's color if available, otherwise use green
       Color memberColor = _currentGroup!.color != null 
           ? Color(_currentGroup!.color!) 
           : Colors.green;
       
-      // Filter out current user and members without location
+      // filter out current user and members without location
       final otherMembers = _currentGroup!.members.where((m) {
         return m.id != user.id.toString() && m.lat != 0.0 && m.lng != 0.0;
       });
           
       for (final m in otherMembers) {
-        // Use different color for incognito members
+        // use different color for incognito members
         final displayColor = m.incognito ? Colors.grey : memberColor;
         final icon = await _letterMarker(
           m.name[0].toUpperCase(),
           displayColor,
         );
         
-        // Add incognito indicator to info window
+        // add incognito indicator to info window
         final titleWithStatus = m.incognito 
             ? "${m.name} (🔍 Incognito)" 
             : m.name;
@@ -646,7 +613,6 @@ class _MapScreenState extends State<MapScreen> {
             icon: icon,
             infoWindow: InfoWindow(title: titleWithStatus),
             onTap: () {
-              // Center map on tapped marker
               _controller?.animateCamera(
                 CameraUpdate.newCameraPosition(
                   CameraPosition(
@@ -655,7 +621,7 @@ class _MapScreenState extends State<MapScreen> {
                   ),
                 ),
               );
-              // Also show info in bottom sheet
+              // also show info in bottom sheet
               showModalBottomSheet(
                 context: context,
                 builder: (_) => Container(
@@ -733,7 +699,6 @@ class _MapScreenState extends State<MapScreen> {
       }
     }
 
-    // 🔴 Temp selection pin
     if (_tempPinLocation != null) {
       newMarkers.add(
         Marker(
@@ -743,7 +708,6 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
 
-    // 🔴 Final score marker
     if (_scoreMarker != null) {
       newMarkers.add(_scoreMarker!);
     }
@@ -753,7 +717,7 @@ class _MapScreenState extends State<MapScreen> {
     });
   }
 
-  /// ✅ North direction button (bearing reset)
+  // / ✅ north direction button (bearing reset)
   void _resetToNorth() {
     final target = _myLocation ?? _defaultCenter;
     _controller?.animateCamera(
@@ -866,11 +830,9 @@ class _MapScreenState extends State<MapScreen> {
     final center = const Offset(48, 40);
     const radius = 28.0;
 
-    // Head circle
     canvas.drawCircle(center, radius, fillPaint);
     canvas.drawCircle(center, radius, strokePaint);
 
-    // Pointer tail
     final tail = Path()
       ..moveTo(center.dx - 14, center.dy + 18)
       ..lineTo(center.dx + 14, center.dy + 18)
@@ -879,7 +841,6 @@ class _MapScreenState extends State<MapScreen> {
     canvas.drawPath(tail, fillPaint);
     canvas.drawPath(tail, strokePaint);
 
-    // Inner dot + letter
     canvas.drawCircle(center, 12, Paint()..color = Colors.white.withOpacity(0.25));
 
     final textPainter = TextPainter(
@@ -958,7 +919,6 @@ class _MapScreenState extends State<MapScreen> {
               },
             ),
 
-            // ✅ Google Map
             GoogleMap(
               initialCameraPosition: CameraPosition(
                 target: initialTarget,
@@ -1174,7 +1134,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-            // ✅ Left group strip
             MapGroupMembersStripLeft(
               group: _currentGroup,
               onMemberTap: (member) {
@@ -1194,18 +1153,17 @@ class _MapScreenState extends State<MapScreen> {
             ),
 
 
-            // ✅ Right incognito strip
             MapIncognitoStripRight(
               incognito: _incognito,
               onChanged: (v) {
                 setState(() => _incognito = v);
                 
-                // Update background location service about incognito mode change
+                // update background location service about incognito mode change
                 BackgroundLocationService.setIncognitoMode(v);
               },
             ),
 
-            // ✅ Help icon button (top-right)
+            // ✅ help icon button (top-right)
             Positioned(
               top: 60,
               right: 10,
@@ -1265,7 +1223,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-            // ✅ Map floating controls (bottom-right)
+            // ✅ map floating controls (bottom-right)
             Positioned(
               right: 14,
               bottom: 22,
@@ -1279,7 +1237,6 @@ class _MapScreenState extends State<MapScreen> {
                         _isSelectingLocation = true;
                         _tempPinLocation = null;
 
-                        // remove old score marker
                         if (_scoreMarker != null) {
                           _markers.remove(_scoreMarker);
                           _scoreMarker = null;
@@ -1312,7 +1269,6 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ),
 
-            // small loading top indicator
             if (_loadingLocation)
               Positioned(
                 top: 90,

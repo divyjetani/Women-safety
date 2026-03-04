@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.util.Log
+import android.view.WindowManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
@@ -20,6 +21,7 @@ class MainActivity : FlutterActivity() {
     private val LOCATION_PERMISSION_REQ = 102
     private val BG_LOCATION_CHANNEL = "com.example.mobile/bg_location"
     private val SOS_TRIGGER_CHANNEL = "sos_trigger"
+    private val SECURE_SCREEN_CHANNEL = "com.example.mobile/secure_screen"
 
     private var sosChannel: MethodChannel? = null
     private var pendingAutoSosReason: String? = null
@@ -126,6 +128,21 @@ class MainActivity : FlutterActivity() {
                         val incognito = call.argument<Boolean>("incognito") ?: false
                         val prefs = getSharedPreferences("bubble_app", MODE_PRIVATE)
                         prefs.edit().putBoolean("incognito_mode", incognito).apply()
+                        result.success(true)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SECURE_SCREEN_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "enable" -> {
+                        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        result.success(true)
+                    }
+                    "disable" -> {
+                        window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
                         result.success(true)
                     }
                     else -> result.notImplemented()

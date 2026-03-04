@@ -1,4 +1,4 @@
-// lib/app/auth_provider.dart
+// App/frontend/mobile/lib/app/auth_provider.dart
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/profile_image_cache_service.dart';

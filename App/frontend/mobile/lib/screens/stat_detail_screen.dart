@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/stat_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:mobile/services/analytics_api.dart';
 import 'package:mobile/models/analytics_models.dart';

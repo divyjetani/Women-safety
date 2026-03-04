@@ -1,4 +1,4 @@
-// lib/services/websocket_services.dart
+// App/frontend/mobile/lib/services/websocket_services.dart
 import 'dart:async';
 import 'dart:typed_data';
 import 'package:web_socket_channel/io.dart';
@@ -16,7 +16,6 @@ class WebSocketService {
 
   String get _wsUrl {
     final base = ApiUrls.baseUrl;
-    // convert http(s) -> ws(s)
     if (base.startsWith('https://')) return base.replaceFirst('https://', 'wss://') + '/ws';
     if (base.startsWith('http://')) return base.replaceFirst('http://', 'ws://') + '/ws';
     return base + '/ws';

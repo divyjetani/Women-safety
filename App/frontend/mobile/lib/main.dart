@@ -1,4 +1,4 @@
-// main.dart
+// App/frontend/mobile/lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app/app.dart';
@@ -8,7 +8,7 @@ import 'services/firebase_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Show splash screen while initializing
+  // show splash screen while initializing
   runApp(const SplashScreenWrapper());
 }
 
@@ -25,7 +25,7 @@ class SplashScreenWrapper extends StatelessWidget {
       themeMode: ThemeMode.system,
       home: SplashScreen(
         onInitializationComplete: () {
-          // After splash screen, run the original main logic
+          // after splash screen, run the original main logic
           _runMainApp();
         },
       ),
@@ -35,7 +35,7 @@ class SplashScreenWrapper extends StatelessWidget {
 
 void _runMainApp() async {
   try {
-    // Initialize Firebase (original code)
+    // initialize firebase (original code)
     await FirebaseNotificationService.initialize();
     print('✅ Firebase initialized successfully');
   } catch (e) {
@@ -46,7 +46,6 @@ void _runMainApp() async {
 
 }
 
-// Splash Screen Widget
 class SplashScreen extends StatefulWidget {
   final VoidCallback onInitializationComplete;
 
@@ -117,15 +116,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       ),
     );
 
-    // Start animation
     _controller.forward();
 
-    // Simulate initialization and proceed
+    // simulate initialization and proceed
     _initializeApp();
   }
 
   void _initializeApp() {
-    // Wait for animations and then proceed
+    // wait for animations and then proceed
     Future.delayed(const Duration(milliseconds: 3000), () {
       widget.onInitializationComplete();
     });
@@ -153,7 +151,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
             return Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Main logo container
                 Transform.translate(
                   offset: Offset(0, _logoOffsetAnimation.value),
                   child: Transform.scale(
@@ -161,7 +158,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     child: Stack(
                       alignment: Alignment.center,
                       children: [
-                        // Outer pulse
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 1200),
                           width: 180 + (_controller.value * 20),
@@ -172,7 +168,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           ),
                         ),
 
-                        // Inner pulse
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 1200),
                           width: 120 + (_controller.value * 10),
@@ -183,7 +178,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           ),
                         ),
 
-                        // Core circle
                         Container(
                           width: 90,
                           height: 90,
@@ -204,7 +198,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                           ),
                         ),
 
-                        // ✅ YOUR LOGO INSIDE THE CIRCLE
+                        // ✅ your logo inside the circle
                         Image.asset(
                           'assets/logo2.png',
                           width: 100,

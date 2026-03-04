@@ -1,30 +1,28 @@
-// services/sos_notification_service.dart
+// App/frontend/mobile/lib/services/sos_notification_service.dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:firebase_core/firebase_core.dart';
 
 class SOSNotificationService {
-  // Get these from your Firebase project
+  // get these from your firebase project
   static const String _projectId = 'women-safety-a7bfe'; // Found in Firebase Project Settings
   static const String _serviceAccountEmail = 'firebase-adminsdk-fbsvc@women-safety-a7bfe.iam.gserviceaccount.com';
 
-  // FCM v1 endpoint
   static String get _fcmV1Url => 'https://fcm.googleapis.com/v1/projects/$_projectId/messages:send';
 
-  // You'll need to implement token generation (usually done on backend)
+  // you'll need to implement token generation (usually done on backend)
   static Future<String?> _getAccessToken() async {
-    // IMPORTANT: Generating access tokens should be done on a BACKEND server
-    // For testing, you can generate a token manually:
+    // important: generating access tokens should be done on a backend server
+    // for testing, you can generate a token manually:
 
-    // Method 1: Generate manually (for testing):
-    // 1. Run in terminal:
-    //    gcloud auth print-access-token
-    // 2. Use that token temporarily
+    // method 1: generate manually (for testing):
+    // gcloud auth print-access-token
+    // 2. use that token temporarily
 
-    // Method 2: Use Firebase Admin SDK on your backend
-    // return await YourBackendService.getFCMAccessToken();
+    // method 2: use firebase admin sdk on your backend
+    // return await yourbackendservice.getfcmaccesstoken();
 
-    // For now, return null - you need to implement proper token generation
+    // for now, return null - you need to implement proper token generation
     return null;
   }
 
@@ -34,14 +32,12 @@ class SOSNotificationService {
     required List<String> fcmTokens,
   }) async {
     try {
-      // Get access token
       final accessToken = await _getAccessToken();
       if (accessToken == null) {
         print('❌ No access token available');
         return;
       }
 
-      // Filter out test tokens
       final validTokens = fcmTokens.where((token) =>
       token.isNotEmpty && !token.startsWith('test_token_')).toList();
 
@@ -50,7 +46,7 @@ class SOSNotificationService {
         return;
       }
 
-      // Send to each emergency contact
+      // send to each emergency contact
       for (final token in validTokens) {
         await _sendToFCMV1(token, userName, location, accessToken);
       }

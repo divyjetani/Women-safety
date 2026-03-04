@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/group_bubble_bar.dart
 import 'package:flutter/material.dart';
 import '../models/bubble_model.dart';
 
@@ -27,17 +28,14 @@ class GroupBubbleBar extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
-          // ➕ Create bubble
           _createBubble(theme),
 
           const SizedBox(width: 14),
           
-          // 🔗 Join bubble
           _joinBubble(theme),
 
           const SizedBox(width: 14),
 
-          // Group bubbles
           ...groups.map((g) => _groupBubble(theme, g)),
         ],
       ),
@@ -85,12 +83,12 @@ class GroupBubbleBar extends StatelessWidget {
   Widget _groupBubble(ThemeData theme, SafetyGroup group) {
     final selected = currentGroup != null && group.id == currentGroup!.id;
     
-    // Use bubble's color if available, otherwise use default
+    // use bubble's color if available, otherwise use default
     Color bubbleColor = group.color != null 
         ? Color(group.color!) 
         : theme.primaryColor;
     
-    // Use bubble's icon if available, otherwise use groups icon
+    // use bubble's icon if available, otherwise use groups icon
     IconData bubbleIcon = group.icon != null 
         ? IconData(group.icon!, fontFamily: 'MaterialIcons')
         : Icons.groups;
@@ -109,7 +107,6 @@ class GroupBubbleBar extends StatelessWidget {
                   child: Icon(bubbleIcon, size: 28, color: bubbleColor),
                 ),
 
-                // ✔ Selected badge
                 if (selected)
                   Positioned(
                     right: 0,

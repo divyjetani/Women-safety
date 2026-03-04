@@ -1,10 +1,14 @@
+// App/frontend/mobile/lib/screens/notifications_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:mobile/services/api_service.dart';
 import 'package:mobile/app/auth_provider.dart';
 import '../app/theme.dart';
+import 'secure_sos_image_screen.dart';
 import '../widgets/app_snackbar.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -16,10 +20,63 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   static final Map<int, List<Map<String, dynamic>>> _sessionNotificationsByUser = {};
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  int? _playingNotificationId;
 
   bool loading = true;
   String? errorMessage;
   List<Map<String, dynamic>> notifications = [];
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  String _resolveBackendUrl(String value) {
+    final raw = value.trim();
+    if (raw.isEmpty) return '';
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+    final base = ApiService.baseUrl.replaceAll(RegExp(r'/$'), '');
+    return '$base/${raw.startsWith('/') ? raw.substring(1) : raw}';
+  }
+
+  Future<void> _dial(String phoneNumber) async {
+    final normalized = phoneNumber.trim();
+    if (normalized.isEmpty) return;
+    final launched = await launchUrl(Uri.parse('tel:$normalized'));
+    if (!launched && mounted) {
+      AppSnackBar.show(context, 'Could not open dial pad', type: AppSnackBarType.error);
+    }
+  }
+
+  Future<void> _playAudio(String rawUrl, int notificationId) async {
+    final url = _resolveBackendUrl(rawUrl);
+    if (url.isEmpty) {
+      AppSnackBar.show(context, '10s SOS audio not available', type: AppSnackBarType.warning);
+      return;
+    }
+
+    try {
+      if (_playingNotificationId == notificationId) {
+        await _audioPlayer.stop();
+        if (mounted) setState(() => _playingNotificationId = null);
+        return;
+      }
+
+      await _audioPlayer.stop();
+      await _audioPlayer.play(UrlSource(url));
+      if (mounted) setState(() => _playingNotificationId = notificationId);
+
+      _audioPlayer.onPlayerComplete.first.then((_) {
+        if (mounted) setState(() => _playingNotificationId = null);
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _playingNotificationId = null);
+      AppSnackBar.show(context, 'Could not play 10s SOS audio', type: AppSnackBarType.error);
+    }
+  }
 
   @override
   void initState() {
@@ -271,10 +328,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             final cause = (n['cause'] ?? body).toString();
             final isFromGroupMember = n['from_group_member'] == true;
             final memberName = (n['member_name'] ?? 'Group Member').toString();
+            final memberPhone = (n['member_phone'] ?? '').toString();
             final memberLocation = (n['member_location'] ?? 'Location unavailable').toString();
             final memberBattery = (n['member_battery'] ?? '--').toString();
-            final memberCameraImage = (n['member_camera_image'] ?? '').toString();
+            final memberCameraImage = (n['sos_camera_front_image'] ?? n['member_camera_image'] ?? '').toString();
+            final audio10sUrl = (n['audio_10s_url'] ?? '').toString();
+            final resolvedCameraImage = _resolveBackendUrl(memberCameraImage);
             final hasCameraImage = memberCameraImage.trim().isNotEmpty;
+            final hasAudioClip = audio10sUrl.trim().isNotEmpty;
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -423,44 +484,58 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               ],
                             ),
                             const SizedBox(height: 10),
-                            Container(
+                            SizedBox(
                               width: double.infinity,
-                              height: 120,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(12),
-                                color: Theme.of(context).cardColor,
-                                border: Border.all(
-                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.35),
-                                ),
-                                image: hasCameraImage
-                                    ? DecorationImage(
-                                        image: NetworkImage(memberCameraImage),
-                                        fit: BoxFit.cover,
-                                      )
+                              child: OutlinedButton.icon(
+                                onPressed: hasCameraImage
+                                    ? () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) => SecureSosImageScreen(
+                                              imageUrl: resolvedCameraImage,
+                                              title: '$memberName SOS Image',
+                                            ),
+                                          ),
+                                        );
+                                      }
                                     : null,
+                                icon: const Icon(Icons.image_outlined),
+                                label: Text(hasCameraImage ? 'View SOS Image' : 'Image unavailable'),
                               ),
-                              child: hasCameraImage
-                                  ? null
-                                  : Center(
-                                      child: Text(
-                                        'Camera image unavailable',
-                                        style: txt.bodySmall,
-                                      ),
-                                    ),
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 6),
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton.icon(
-                                onPressed: () {
-                                  AppSnackBar.show(
-                                    context,
-                                    '10s audio preview is available in prototype mode',
-                                  );
-                                },
+                                onPressed: hasAudioClip ? () => _playAudio(audio10sUrl, id) : null,
                                 icon: const Icon(Icons.play_arrow_rounded),
-                                label: const Text('Play 10s Audio'),
+                                label: Text(
+                                  _playingNotificationId == id ? 'Stop 10s Audio' : 'Play 10s Audio',
+                                ),
                               ),
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: memberPhone.trim().isEmpty
+                                        ? null
+                                        : () => _dial(memberPhone),
+                                    icon: const Icon(Icons.call_rounded),
+                                    label: const Text('Call User'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: OutlinedButton.icon(
+                                    onPressed: () => _dial('112'),
+                                    icon: const Icon(Icons.local_police_rounded),
+                                    label: const Text('Call 112'),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

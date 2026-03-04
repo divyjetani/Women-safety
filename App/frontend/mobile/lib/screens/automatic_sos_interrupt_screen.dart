@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/screens/automatic_sos_interrupt_screen.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -10,7 +11,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../app/auth_provider.dart';
 import '../services/api_service.dart';
@@ -36,6 +39,7 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
   static const int _statusPollSeconds = 1;
 
   final LocalAuthentication _localAuth = LocalAuthentication();
+  final AudioRecorder _audioRecorder = AudioRecorder();
 
   bool _flashOn = true;
   bool _checkingStop = false;
@@ -43,6 +47,7 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
   bool _isCompleted = false;
   bool _hasSentAlert = false;
   String _verificationStatus = '';
+  String _pendingSetupStatus = '';
 
   int _secondsLeft = _initialCountdownSeconds;
   String? _pendingId;
@@ -78,6 +83,11 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
   Future<void> _beginAutomaticPendingFlow() async {
     if (_isStartingPending) return;
     _isStartingPending = true;
+    if (mounted) {
+      setState(() {
+        _pendingSetupStatus = 'Preparing automatic SOS...';
+      });
+    }
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -85,6 +95,20 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
       if (user == null) {
         throw Exception('User not logged in');
       }
+
+      if (mounted) {
+        setState(() {
+          _pendingSetupStatus = 'Capturing selfie image...';
+        });
+      }
+      final capturedSelfie = await _captureSelfieBase64();
+
+      if (mounted) {
+        setState(() {
+          _pendingSetupStatus = 'Recording 10s audio clip...';
+        });
+      }
+      final capturedAudio = await _capture10sAudioBase64();
 
       Position? position;
       try {
@@ -126,9 +150,9 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
         lng: position?.longitude,
         battery: battery,
         bubbleCode: selectedBubbleCode,
-        cameraFrontImage: user.faceImage,
+        cameraFrontImage: capturedSelfie.isNotEmpty ? capturedSelfie : user.faceImage,
         cameraBackImage: user.faceImage,
-        audio10sUrl: '',
+        audio10sUrl: capturedAudio,
         message: 'Automatic SOS triggered. Reason: ${widget.reason}',
       );
 
@@ -152,7 +176,80 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
       );
       Navigator.of(context).pop();
     } finally {
-      _isStartingPending = false;
+      if (mounted) {
+        setState(() {
+          _isStartingPending = false;
+          _pendingSetupStatus = '';
+        });
+      } else {
+        _isStartingPending = false;
+      }
+    }
+  }
+
+  Future<String> _captureSelfieBase64() async {
+    CameraController? controller;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) return '';
+
+      final frontCamera = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+
+      controller = CameraController(
+        frontCamera,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.jpeg,
+      );
+      await controller.initialize();
+      await controller.setFlashMode(FlashMode.off);
+
+      final selfie = await controller.takePicture();
+      final selfieBytes = await File(selfie.path).readAsBytes();
+      if (selfieBytes.isEmpty) return '';
+      return 'data:image/jpeg;base64,${base64Encode(selfieBytes)}';
+    } catch (_) {
+      return '';
+    } finally {
+      await controller?.dispose();
+    }
+  }
+
+  Future<String> _capture10sAudioBase64() async {
+    try {
+      final hasPermission = await _audioRecorder.hasPermission();
+      if (!hasPermission) return '';
+
+      final dir = await getTemporaryDirectory();
+      final outputPath = '${dir.path}/auto_sos_audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
+      await _audioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          bitRate: 128000,
+          sampleRate: 44100,
+        ),
+        path: outputPath,
+      );
+
+      await Future<void>.delayed(const Duration(seconds: 10));
+      final recordedPath = await _audioRecorder.stop();
+      if (recordedPath == null || recordedPath.trim().isEmpty) return '';
+
+      final file = File(recordedPath);
+      if (!await file.exists()) return '';
+
+      final bytes = await file.readAsBytes();
+      if (bytes.isEmpty) return '';
+      return 'data:audio/mp4;base64,${base64Encode(bytes)}';
+    } catch (_) {
+      try {
+        await _audioRecorder.stop();
+      } catch (_) {}
+      return '';
     }
   }
 
@@ -219,7 +316,6 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
         if (mounted) Navigator.of(context).pop();
       }
     } catch (_) {
-      // best-effort polling only
     }
   }
 
@@ -338,7 +434,7 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
   }
 
   Future<bool> _verifyWithSelfie(String profileImageBase64) async {
-    XFile? selfie;
+    late final XFile selfie;
     CameraController? controller;
     try {
       final cameras = await availableCameras();
@@ -364,8 +460,6 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
     } finally {
       await controller?.dispose();
     }
-
-    if (selfie == null) return false;
 
     if (profileImageBase64.trim().isEmpty) {
       return true;
@@ -424,6 +518,7 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
     _flashTimer?.cancel();
     _countdownTimer?.cancel();
     _statusPollTimer?.cancel();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -481,6 +576,18 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
                     fontWeight: FontWeight.w700,
                   ),
                 ),
+                if (_isStartingPending && _pendingSetupStatus.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    _pendingSetupStatus,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: fg,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
                 if (_checkingStop && _verificationStatus.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(

@@ -1,3 +1,4 @@
+// App/frontend/mobile/lib/widgets/bubble_info_sheet.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -43,7 +44,6 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
         });
       }
     } catch (e) {
-      // ignore
     }
   }
 
@@ -70,7 +70,6 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
               style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 10),
           
-          // Show Bubble Code
           if (widget.group!.code != null) ...[
             Container(
               padding: const EdgeInsets.all(12),
@@ -105,7 +104,6 @@ class _BubbleInfoSheetState extends State<BubbleInfoSheet> {
             const SizedBox(height: 16),
           ],
           
-          // Members section
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [

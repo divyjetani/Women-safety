@@ -1,4 +1,4 @@
-// lib/app/theme.dart
+// App/frontend/mobile/lib/app/theme.dart
 import 'package:flutter/material.dart';
 
 class _CoolPageTransitionsBuilder extends PageTransitionsBuilder {
@@ -46,7 +46,6 @@ class AppTheme {
   static const Color warningColor = Color(0xFFFF9800);
   static const Color successColor = Color(0xFF4CAF50);
   static const Color infoColor = Color(0xFF2196F3);
-  // Skeleton Loader Colors
   static const Color skeletonBaseLight = Color(0xFFEAEAEA);
   static const Color skeletonHighlightLight = Color(0xFFF5F5F5);
 
@@ -55,13 +54,11 @@ class AppTheme {
 
   static ThemeData get lightTheme {
     return ThemeData(
-      // Core theme properties
       primaryColor: primaryColor,
       scaffoldBackgroundColor: backgroundColor,
       fontFamily: 'Poppins',
       brightness: Brightness.light,
 
-      // Card Theme
       cardTheme: CardThemeData(
         elevation: 2,
         shape: RoundedRectangleBorder(
@@ -70,7 +67,6 @@ class AppTheme {
         color: surfaceColor,
       ),
 
-      // App Bar Theme
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -83,7 +79,6 @@ class AppTheme {
         ),
       ),
 
-      // Text Theme
       textTheme: const TextTheme(
         displayLarge: TextStyle(
           fontSize: 32,
@@ -115,7 +110,6 @@ class AppTheme {
         ),
       ),
 
-      // Button Theme
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
@@ -127,7 +121,6 @@ class AppTheme {
         ),
       ),
 
-      // Color Scheme
       colorScheme: ColorScheme.light(
         primary: primaryColor,
         secondary: secondaryColor,
@@ -150,13 +143,11 @@ class AppTheme {
 
   static ThemeData get darkTheme {
     return ThemeData(
-      // Core theme properties
       primaryColor: primaryColor,
       scaffoldBackgroundColor: const Color(0xFF121212),
       fontFamily: 'Poppins',
       brightness: Brightness.dark,
 
-      // Card Theme
       cardTheme: CardThemeData(
         elevation: 4,
         shape: RoundedRectangleBorder(
@@ -165,7 +156,6 @@ class AppTheme {
         color: const Color(0xFF1E1E1E),
       ),
 
-      // App Bar Theme
       appBarTheme: AppBarTheme(
         backgroundColor: const Color(0xFF1E1E1E),
         elevation: 0,
@@ -178,7 +168,6 @@ class AppTheme {
         ),
       ),
 
-      // Text Theme
       textTheme: const TextTheme(
         displayLarge: TextStyle(
           fontSize: 32,
@@ -210,7 +199,6 @@ class AppTheme {
         ),
       ),
 
-      // Button Theme
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryColor,
@@ -222,7 +210,6 @@ class AppTheme {
         ),
       ),
 
-      // Color Scheme
       colorScheme: ColorScheme.dark(
         primary: primaryColor,
         secondary: secondaryColor,
