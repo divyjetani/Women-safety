@@ -62,10 +62,11 @@ object SafetySocket {
 
         val prefs = appContext?.getSharedPreferences("bubble_app", MODE_PRIVATE)
         val userId = prefs?.getInt("user_id", -1) ?: -1
+        val ip = prefs?.getString("ip_address", "") ?: ""
         val wsUrl = if (userId > 0) {
-            "ws://10.101.4.13:8000/ws?user_id=$userId"
+            "ws://$ip:8000/ws?user_id=$userId"
         } else {
-            "ws://10.101.4.13:8000/ws"
+            "ws://$ip:8000/ws"
         }
 
         val request = Request.Builder()

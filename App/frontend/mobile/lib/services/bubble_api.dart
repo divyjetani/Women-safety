@@ -6,7 +6,17 @@ import 'package:mobile/conn_url.dart';
 import 'package:mobile/models/bubble_model.dart';
 
 class BubbleAPI {
-  static const String baseUrl = ApiUrls.baseUrl;
+  static String baseUrl = ApiUrls.baseUrl;
+
+  static String _absoluteUrl(String value) {
+    if (value.startsWith('http://') || value.startsWith('https://')) {
+      return value;
+    }
+    if (value.startsWith('/')) {
+      return '$baseUrl$value';
+    }
+    return '$baseUrl/$value';
+  }
   static const Duration _timeout = Duration(seconds: 10);
 
   static Future<Map<String, String>> _headers({bool withAuth = false}) async {
@@ -36,7 +46,7 @@ class BubbleAPI {
     try {
       final headers = await _headers();
       final response = await http.post(
-        Uri.parse('$baseUrl/bubble/create'),
+        Uri.parse(_absoluteUrl('/bubble/create')),
         headers: headers,
         body: jsonEncode({
           'name': name,
@@ -67,7 +77,7 @@ class BubbleAPI {
     try {
       final headers = await _headers();
       final response = await http.post(
-        Uri.parse('$baseUrl/bubble/join'),
+        Uri.parse(_absoluteUrl('/bubble/join')),
         headers: headers,
         body: jsonEncode({
           'code': code,
@@ -93,7 +103,7 @@ class BubbleAPI {
     try {
       final headers = await _headers();
       final response = await http.get(
-        Uri.parse('$baseUrl/bubble/$code'),
+        Uri.parse(_absoluteUrl('/bubble/$code')),
         headers: headers,
       ).timeout(_timeout);
 
@@ -114,7 +124,7 @@ class BubbleAPI {
     try {
       final headers = await _headers();
       final response = await http.get(
-        Uri.parse('$baseUrl/bubble/list/$userId'),
+        Uri.parse(_absoluteUrl('/bubble/list/$userId')),
         headers: headers,
       ).timeout(_timeout);
 
@@ -142,7 +152,7 @@ class BubbleAPI {
     try {
       final headers = await _headers();
       final response = await http.post(
-        Uri.parse('$baseUrl/bubble/share-location'),
+        Uri.parse(_absoluteUrl('/bubble/share-location')),
         headers: headers,
         body: jsonEncode({
           'user_id': userId,

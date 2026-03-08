@@ -76,6 +76,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   final _appLinks = AppLinks();
 
+  String _formatTimestampDisplay(dynamic rawValue) {
+    DateTime? parsed;
+
+    if (rawValue is DateTime) {
+      parsed = rawValue;
+    } else if (rawValue is num) {
+      final millis = rawValue > 9999999999 ? rawValue.toInt() : (rawValue * 1000).toInt();
+      parsed = DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+    } else if (rawValue != null) {
+      parsed = DateTime.tryParse(rawValue.toString());
+    }
+
+    if (parsed == null) {
+      final fallback = (rawValue ?? '').toString().trim();
+      return fallback.isEmpty ? '-' : fallback;
+    }
+
+    final local = parsed.toLocal();
+    final dd = local.day.toString().padLeft(2, '0');
+    final mm = local.month.toString().padLeft(2, '0');
+    final yyyy = local.year.toString();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    final ss = local.second.toString().padLeft(2, '0');
+    return '$dd/$mm/$yyyy $hh:$min:$ss';
+  }
+
   Future<void> _toggleBackgroundSafety() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -1410,7 +1437,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             Text(
-              activity.time,
+              _formatTimestampDisplay(activity.time),
               style: TextStyle(
                 fontSize: 12,
                 color: Theme.of(context).textTheme.bodySmall!.color!.withOpacity(0.65),
@@ -1471,7 +1498,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 12),
                 _detailRow('Type', activity.type),
                 _detailRow('Location', activity.location),
-                _detailRow('Time', activity.time),
+                _detailRow('Time', _formatTimestampDisplay(activity.time)),
                 _detailRow('Status', 'Recorded in your safety timeline'),
                 const SizedBox(height: 12),
                 Text(

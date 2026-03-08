@@ -44,6 +44,69 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   String? _localFaceImagePath;
   bool saving = false;
 
+  String _normalizeBase64Image(String value) {
+    final raw = value.trim();
+    if (raw.startsWith('data:image/') && raw.contains(',')) {
+      return raw.split(',')[1].trim();
+    }
+    return raw;
+  }
+
+  String _normalizeImageSource(String value) {
+    return value.trim().replaceAll('\\', '/');
+  }
+
+  Widget _buildRemoteOrBase64Avatar() {
+    final normalized = _normalizeImageSource(_faceImageValue);
+    if (normalized.isEmpty) {
+      return const CircleAvatar(
+        radius: 42,
+        child: Icon(Icons.person_rounded, size: 36),
+      );
+    }
+
+    try {
+      if (normalized.startsWith('/profile_pics/') ||
+          normalized.startsWith('profile_pics/') ||
+          normalized.startsWith('http://') ||
+          normalized.startsWith('https://')) {
+        final resolvedUrl = normalized.startsWith('http')
+            ? normalized
+            : '${ApiService.baseUrl}${normalized.startsWith('/') ? '' : '/'}$normalized';
+        return ClipOval(
+          child: Image.network(
+            resolvedUrl,
+            width: 84,
+            height: 84,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const CircleAvatar(
+              radius: 42,
+              child: Icon(Icons.person_rounded, size: 36),
+            ),
+          ),
+        );
+      }
+
+      return ClipOval(
+        child: Image.memory(
+          base64Decode(_normalizeBase64Image(normalized)),
+          width: 84,
+          height: 84,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const CircleAvatar(
+            radius: 42,
+            child: Icon(Icons.person_rounded, size: 36),
+          ),
+        ),
+      );
+    } catch (_) {
+      return const CircleAvatar(
+        radius: 42,
+        child: Icon(Icons.person_rounded, size: 36),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -170,49 +233,44 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Widget _buildAvatarPreview() {
     if (_pickedImage != null) {
-      return CircleAvatar(
-        radius: 42,
-        backgroundImage: FileImage(_pickedImage!),
+      return ClipOval(
+        child: Image.file(
+          _pickedImage!,
+          width: 84,
+          height: 84,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const CircleAvatar(
+            radius: 42,
+            child: Icon(Icons.person_rounded, size: 36),
+          ),
+        ),
       );
     }
 
     if (_localFaceImagePath != null && _localFaceImagePath!.trim().isNotEmpty) {
       final local = File(_localFaceImagePath!);
       if (local.existsSync()) {
-        return CircleAvatar(
-          radius: 42,
-          backgroundImage: FileImage(local),
+        return ClipOval(
+          child: Image.file(
+            local,
+            width: 84,
+            height: 84,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                setState(() {
+                  _localFaceImagePath = null;
+                });
+              });
+              return _buildRemoteOrBase64Avatar();
+            },
+          ),
         );
       }
     }
 
-    if (_faceImageValue.trim().isNotEmpty) {
-      try {
-        if (_faceImageValue.startsWith('/profile_pics/') ||
-            _faceImageValue.startsWith('profile_pics/') ||
-            _faceImageValue.startsWith('http://') ||
-            _faceImageValue.startsWith('https://')) {
-          final resolvedUrl = _faceImageValue.startsWith('http')
-              ? _faceImageValue
-              : '${ApiService.baseUrl}${_faceImageValue.startsWith('/') ? '' : '/'}$_faceImageValue';
-          return CircleAvatar(
-            radius: 42,
-            backgroundImage: NetworkImage(resolvedUrl),
-          );
-        }
-
-        return CircleAvatar(
-          radius: 42,
-          backgroundImage: MemoryImage(base64Decode(_faceImageValue)),
-        );
-      } catch (_) {
-      }
-    }
-
-    return const CircleAvatar(
-      radius: 42,
-      child: Icon(Icons.person_rounded, size: 36),
-    );
+    return _buildRemoteOrBase64Avatar();
   }
 
   @override

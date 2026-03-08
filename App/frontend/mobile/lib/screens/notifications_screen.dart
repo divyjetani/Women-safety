@@ -106,6 +106,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return null;
   }
 
+  String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final dd = local.day.toString().padLeft(2, '0');
+    final mm = local.month.toString().padLeft(2, '0');
+    final yyyy = local.year.toString();
+    final hh = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    final ss = local.second.toString().padLeft(2, '0');
+    return '$dd/$mm/$yyyy $hh:$min:$ss';
+  }
+
+  String _formattedNotificationTime(Map<String, dynamic> notification) {
+    final parsed = _parseNotificationTime(notification);
+    if (parsed != null) {
+      return _formatDateTime(parsed);
+    }
+
+    final fallback = (notification['time'] ?? '').toString().trim();
+    return fallback.isEmpty ? 'Time unavailable' : fallback;
+  }
+
   void _sortNotificationsLatestFirst(List<Map<String, dynamic>> items) {
     items.sort((a, b) {
       final bTime = _parseNotificationTime(b);
@@ -322,7 +343,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             final id = n["id"] ?? 0;
             final title = n["title"] ?? "Notification";
             final body = n["body"] ?? "";
-            final time = n["time"] ?? "";
+            final time = _formattedNotificationTime(n);
             final read = n["read"] ?? false;
             final type = (n['type'] ?? 'info').toString();
             final cause = (n['cause'] ?? body).toString();
@@ -385,7 +406,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   _metaChip(
                                     context,
                                     icon: Icons.schedule_rounded,
-                                    label: time.isEmpty ? 'Time unavailable' : time,
+                                    label: time,
                                   ),
                                   _metaChip(
                                     context,

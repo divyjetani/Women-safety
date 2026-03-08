@@ -11,7 +11,7 @@ import 'package:mobile/models/bubble_model.dart';
 import 'background_location_service.dart';
 
 class ApiService {
-  static const String baseUrl = ApiUrls.baseUrl;
+  static String baseUrl = ApiUrls.baseUrl;
 
   static String _absoluteUrl(String value) {
     if (value.startsWith('http://') || value.startsWith('https://')) {
@@ -126,7 +126,7 @@ class ApiService {
   }) async {
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
-        Uri.parse('$baseUrl/auth/login'),
+        Uri.parse(_absoluteUrl('/auth/login')),
         headers: await _headers(),
         body: jsonEncode({'email': email, 'password': password}),
       );
@@ -149,7 +149,7 @@ class ApiService {
   }) async {
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
-        Uri.parse('$baseUrl/auth/register'),
+        Uri.parse(_absoluteUrl('/auth/register')),
         headers: await _headers(),
         body: jsonEncode({
           'username': username,
@@ -172,7 +172,7 @@ class ApiService {
   static Future<AuthMessageResponse> forgotPassword(String email) async {
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
-        Uri.parse('$baseUrl/auth/forgot-password'),
+        Uri.parse(_absoluteUrl('/auth/forgot-password')),
         headers: await _headers(),
         body: jsonEncode({'email': email}),
       );
@@ -188,7 +188,7 @@ class ApiService {
   }) async {
     final jsonResponse = await _makeRequest(() async {
       return await http.post(
-        Uri.parse('$baseUrl/auth/reset-password'),
+        Uri.parse(_absoluteUrl('/auth/reset-password')),
         headers: await _headers(),
         body: jsonEncode({
           'email': email,

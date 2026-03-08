@@ -1,7 +1,9 @@
 3 km radius ma safe zones batave
-end to end encryption in audio and video data 
 
-automatic sos is not working properly, flashing screen also 
+########## to start backend ##########
+.venv/scripts/activate
+cd app/backend
+python main.py
 
 frontend:
 

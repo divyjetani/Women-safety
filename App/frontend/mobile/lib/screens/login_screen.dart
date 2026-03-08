@@ -8,6 +8,8 @@ import '../widgets/app_snackbar.dart';
 import '../widgets/error_dialog.dart';
 import 'main_screen.dart';
 import 'register_screen.dart';
+import '../conn_url.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -41,6 +43,16 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final ip = prefs.getString('ip_address');
+    if (ip == null || ip.isEmpty) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const IpPromptScreen()),
+      );
+      return;
+    }
 
     final authProvider = context.read<AuthProvider>();
     final success = await authProvider.login(
@@ -428,6 +440,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+                Center(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const IpPromptScreen(),
+                        ),
+                      );
+                    },
+                    child: const Text('Server IP'),
                   ),
                 ),
               ],

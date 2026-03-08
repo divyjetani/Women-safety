@@ -4,6 +4,33 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../widgets/app_snackbar.dart';
 
+String _formatTimestampDisplay(dynamic rawValue) {
+  DateTime? parsed;
+
+  if (rawValue is DateTime) {
+    parsed = rawValue;
+  } else if (rawValue is num) {
+    final millis = rawValue > 9999999999 ? rawValue.toInt() : (rawValue * 1000).toInt();
+    parsed = DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true);
+  } else if (rawValue != null) {
+    parsed = DateTime.tryParse(rawValue.toString());
+  }
+
+  if (parsed == null) {
+    final fallback = (rawValue ?? '').toString().trim();
+    return fallback.isEmpty ? '-' : fallback;
+  }
+
+  final local = parsed.toLocal();
+  final dd = local.day.toString().padLeft(2, '0');
+  final mm = local.month.toString().padLeft(2, '0');
+  final yyyy = local.year.toString();
+  final hh = local.hour.toString().padLeft(2, '0');
+  final min = local.minute.toString().padLeft(2, '0');
+  final ss = local.second.toString().padLeft(2, '0');
+  return '$dd/$mm/$yyyy $hh:$min:$ss';
+}
+
 class AnalyticsScreenV2 extends StatefulWidget {
   const AnalyticsScreenV2({super.key});
 
@@ -172,7 +199,7 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
                             leading: const Icon(Icons.location_on_outlined),
                             title: Text((item['location'] ?? 'Unknown location').toString()),
                             subtitle: Text(
-                              '${(item['threatType'] ?? 'Unknown threat').toString()} • ${(item['time'] ?? '').toString()}',
+                              '${(item['threatType'] ?? 'Unknown threat').toString()} • ${_formatTimestampDisplay(item['time'])}',
                             ),
                             trailing: const Icon(Icons.chevron_right_rounded),
                             onTap: () => _openAlertDetails(item),
@@ -488,7 +515,7 @@ class _AllAlertsHistoryScreen extends StatelessWidget {
                     leading: const Icon(Icons.warning_amber_rounded),
                     title: Text((item['location'] ?? 'Unknown location').toString()),
                     subtitle: Text(
-                      '${(item['threatType'] ?? 'Unknown threat').toString()} • ${(item['time'] ?? '').toString()}',
+                      '${(item['threatType'] ?? 'Unknown threat').toString()} • ${_formatTimestampDisplay(item['time'])}',
                     ),
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: () => onAlertTap(item),
@@ -540,7 +567,7 @@ class _AlertDetailsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       SelectableText(
-                        _stringify(entry.value),
+                        _stringify(entry.key, entry.value),
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
                     ],
@@ -551,7 +578,12 @@ class _AlertDetailsScreen extends StatelessWidget {
     );
   }
 
-  static String _stringify(dynamic value) {
+  static String _stringify(String key, dynamic value) {
+    final normalizedKey = key.toLowerCase();
+    if (normalizedKey.contains('time') || normalizedKey.contains('date') || normalizedKey.contains('timestamp')) {
+      return _formatTimestampDisplay(value);
+    }
+
     if (value == null) return '-';
     if (value is String) return value.isEmpty ? '-' : value;
     if (value is num || value is bool) return value.toString();

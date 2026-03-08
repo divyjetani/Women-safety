@@ -75,6 +75,58 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return "email@email.com";
   }
 
+  String _normalizeBase64Image(String value) {
+    final raw = value.trim();
+    if (raw.startsWith('data:image/') && raw.contains(',')) {
+      return raw.split(',')[1].trim();
+    }
+    return raw;
+  }
+
+  String _normalizeImageSource(String value) {
+    return value.trim().replaceAll('\\', '/');
+  }
+
+  Widget _buildRemoteOrBase64Avatar() {
+    final normalized = _normalizeImageSource(faceImage);
+    if (normalized.isEmpty) {
+      return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
+    }
+
+    try {
+      if (normalized.startsWith('/profile_pics/') ||
+          normalized.startsWith('profile_pics/') ||
+          normalized.startsWith('http://') ||
+          normalized.startsWith('https://')) {
+        final resolvedUrl = normalized.startsWith('http')
+            ? normalized
+            : '${ApiService.baseUrl}${normalized.startsWith('/') ? '' : '/'}$normalized';
+        return ClipOval(
+          child: Image.network(
+            resolvedUrl,
+            width: 100,
+            height: 100,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white, size: 42),
+          ),
+        );
+      }
+
+      final bytes = base64Decode(_normalizeBase64Image(normalized));
+      return ClipOval(
+        child: Image.memory(
+          bytes,
+          width: 100,
+          height: 100,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white, size: 42),
+        ),
+      );
+    } catch (_) {
+      return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -757,46 +809,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             width: 100,
             height: 100,
             fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                setState(() {
+                  _localFaceImagePath = null;
+                });
+              });
+              return _buildRemoteOrBase64Avatar();
+            },
           ),
         );
       }
     }
 
-    if (faceImage.trim().isEmpty) {
-      return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
-    }
-
-    try {
-      if (faceImage.startsWith('/profile_pics/') ||
-          faceImage.startsWith('profile_pics/') ||
-          faceImage.startsWith('http://') ||
-          faceImage.startsWith('https://')) {
-        final resolvedUrl = faceImage.startsWith('http')
-            ? faceImage
-            : '${ApiService.baseUrl}${faceImage.startsWith('/') ? '' : '/'}$faceImage';
-        return ClipOval(
-          child: Image.network(
-            resolvedUrl,
-            width: 100,
-            height: 100,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => const Icon(Icons.person_rounded, color: Colors.white, size: 42),
-          ),
-        );
-      }
-
-      final bytes = base64Decode(faceImage);
-      return ClipOval(
-        child: Image.memory(
-          bytes,
-          width: 100,
-          height: 100,
-          fit: BoxFit.cover,
-        ),
-      );
-    } catch (_) {
-      return const Icon(Icons.person_rounded, color: Colors.white, size: 42);
-    }
+    return _buildRemoteOrBase64Avatar();
   }
 
   void _showPrivacyBottomSheet() {

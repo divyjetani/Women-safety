@@ -82,16 +82,25 @@ class GroupBubbleBar extends StatelessWidget {
 
   Widget _groupBubble(ThemeData theme, SafetyGroup group) {
     final selected = currentGroup != null && group.id == currentGroup!.id;
-    
+
     // use bubble's color if available, otherwise use default
     Color bubbleColor = group.color != null 
         ? Color(group.color!) 
         : theme.primaryColor;
-    
-    // use bubble's icon if available, otherwise use groups icon
-    IconData bubbleIcon = group.icon != null 
-        ? IconData(group.icon!, fontFamily: 'MaterialIcons')
-        : Icons.groups;
+
+    // Fix: Use a static map of supported icons for tree shaking
+    // Only use constant IconData values
+    final Map<int, IconData> supportedIcons = {
+      0xe7fb: Icons.groups, // example mapping, add more as needed
+      0xe7fd: Icons.group_add,
+      0xe87c: Icons.person,
+      // Add more icon code mappings as needed
+    };
+
+    IconData bubbleIcon = Icons.groups;
+    if (group.icon != null && supportedIcons.containsKey(group.icon)) {
+      bubbleIcon = supportedIcons[group.icon]!;
+    }
 
     return GestureDetector(
       onTap: () => onSelect(group),

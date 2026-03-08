@@ -48,6 +48,13 @@ class LocationSharingService : Service() {
         prefs = getSharedPreferences("bubble_app", Context.MODE_PRIVATE)
         requestQueue = Volley.newRequestQueue(this)
 
+        // Prompt user for IP if not set
+        val ip = prefs.getString("ip_address", null)
+        if (ip == null || ip.isEmpty()) {
+            // TODO: Show dialog/input to user to enter IP, then save to prefs
+            // Example: prefs.edit().putString("ip_address", userInputIp).apply()
+        }
+
         createNotificationChannel()
         val notification = buildNotification("Location sharing active")
         startForeground(NOTIFICATION_ID, notification)
@@ -163,7 +170,8 @@ class LocationSharingService : Service() {
             }
 
             // Use the backend location sharing endpoint
-            val url = "http://10.101.4.13:8000/bubble/share-location"
+            val ip = prefs.getString("ip_address", "")
+            val url = "http://$ip:8000/bubble/share-location"
 
             val request = object : JsonObjectRequest(
                 Method.POST, url, body,

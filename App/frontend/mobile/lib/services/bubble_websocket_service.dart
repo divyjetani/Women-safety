@@ -32,7 +32,12 @@ class BubbleWebSocketService {
   Future<void> connect() async {
     try {
       final baseUrl = ApiUrls.baseUrl;
-      final wsUrl = baseUrl.replaceFirst('http', 'ws');
+      String wsUrl = baseUrl;
+      if (wsUrl.startsWith('http://')) {
+        wsUrl = wsUrl.replaceFirst('http://', 'ws://');
+      } else if (wsUrl.startsWith('https://')) {
+        wsUrl = wsUrl.replaceFirst('https://', 'wss://');
+      }
       final url = '$wsUrl/ws/bubble/$bubbleCode/$userId';
 
       _channel = WebSocketChannel.connect(Uri.parse(url));

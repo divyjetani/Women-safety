@@ -4,11 +4,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'app/app.dart';
 import 'app/theme.dart';
 import 'services/firebase_service.dart';
+import 'conn_url.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // show splash screen while initializing
+  await ApiUrls.initBaseUrl();
   runApp(const SplashScreenWrapper());
 }
 
