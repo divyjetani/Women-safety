@@ -139,14 +139,32 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    await _safetyChannel.invokeMethod('startService');
-    // open websocket when starting monitoring (native service sends audio from kotlin)
-    await WebSocketService().connect(_userId);
-    await prefs.setBool('bg_safety_on', true);
+    try {
+      await _safetyChannel.invokeMethod('startService');
+      // open websocket when starting monitoring (native service sends audio from kotlin)
+      await WebSocketService().connect(_userId);
+      await prefs.setBool('bg_safety_on', true);
 
-    setState(() {
-      _backgroundSafetyOn = true;
-    });
+      if (!mounted) return;
+      setState(() {
+        _backgroundSafetyOn = true;
+      });
+    } catch (err) {
+      await prefs.setBool('bg_safety_on', false);
+      try {
+        await _safetyChannel.invokeMethod('stopService');
+      } catch (_) {
+        // ignore secondary cleanup failures
+      }
+      await WebSocketService().close();
+
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Could not start monitoring. Check server IP/backend and try again.',
+        type: AppSnackBarType.error,
+      );
+    }
   }
 
 
@@ -154,6 +172,15 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadBackgroundSafetyState();
+
+    WebSocketService.showConnectionError = (_) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Monitoring connection lost. Reconnecting...',
+        type: AppSnackBarType.warning,
+      );
+    };
 
     // ✅ listen for service stop callback from native code
     _safetyChannel.setMethodCallHandler((call) async {
@@ -214,6 +241,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timeoutTimer?.cancel();
+    WebSocketService.showConnectionError = null;
     super.dispose();
   }
 

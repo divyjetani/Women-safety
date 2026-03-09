@@ -209,7 +209,33 @@ class ApiService {
     }
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+    const keysToRemove = <String>[
+      'token',
+      'user',
+      'cached_user_id',
+      'cached_user_name',
+      'cached_user_email',
+      'bg_safety_on',
+      'selected_bubble_code',
+      'selected_group_name',
+      'last_latitude',
+      'last_longitude',
+      'last_location_ts',
+      'bubble_groups',
+    ];
+    for (final key in keysToRemove) {
+      await prefs.remove(key);
+    }
+
+    final dynamicKeys = prefs.getKeys().where(
+      (key) =>
+          key.startsWith('cached_profile_') ||
+          key.startsWith('cached_contacts_') ||
+          key.startsWith('profile_image_path_'),
+    );
+    for (final key in dynamicKeys) {
+      await prefs.remove(key);
+    }
   }
 
   static Future<User?> getCurrentUser() async {
@@ -344,6 +370,27 @@ class ApiService {
         body: jsonEncode({
           'user_id': userId,
           'reason': reason,
+        }),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> updateAutomaticPendingSosMedia({
+    required String pendingId,
+    required int userId,
+    String? cameraFrontImage,
+    String? cameraBackImage,
+    String? audio10sUrl,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.patch(
+        Uri.parse('$baseUrl/sos/automatic/$pendingId/media'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'camera_front_image': cameraFrontImage,
+          'camera_back_image': cameraBackImage,
+          'audio_10s_url': audio10sUrl,
         }),
       );
     });

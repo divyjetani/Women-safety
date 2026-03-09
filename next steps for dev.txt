@@ -1,9 +1,5 @@
 3 km radius ma safe zones batave
 
-########## to start backend ##########
-.venv/scripts/activate
-cd app/backend
-python main.py
 
 frontend:
 

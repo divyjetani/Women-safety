@@ -14,6 +14,7 @@ from schemas.sos import (
     ResolveSOSRequest,
     AutomaticSOSStartRequest,
     AutomaticSOSCancelRequest,
+    AutomaticSOSMediaUpdateRequest,
 )
 from database.collections import get_collections
 from services.alert_dispatch_service import send_fcm_notifications, send_sms_fallback
@@ -455,13 +456,18 @@ async def cancel_automatic_sos(pending_id: str, request: AutomaticSOSCancelReque
     if task and not task.done():
         task.cancel()
 
+    reason_text = (request.reason or "Cancelled by user from frontend").strip()
+    reason_lower = reason_text.lower()
+    is_false_alert = "false_alert" in reason_lower or "false alert" in reason_lower
+
     await auto_pending_col.update_one(
         {"id": pending_id, "user_id": request.user_id},
         {
             "$set": {
                 "status": "cancelled",
                 "cancelled_at": datetime.now().isoformat(),
-                "cancel_reason": request.reason or "Cancelled by user from frontend",
+                "cancel_reason": reason_text,
+                "cancel_category": "false_alert" if is_false_alert else "user_cancelled",
             }
         },
     )
@@ -470,7 +476,59 @@ async def cancel_automatic_sos(pending_id: str, request: AutomaticSOSCancelReque
         "success": True,
         "pending_id": pending_id,
         "status": "cancelled",
+        "category": "false_alert" if is_false_alert else "user_cancelled",
         "message": "Automatic SOS cancelled successfully",
+    }
+
+
+@router.patch("/automatic/{pending_id}/media")
+async def update_automatic_sos_pending_media(pending_id: str, body: AutomaticSOSMediaUpdateRequest):
+    collections = get_collections()
+    auto_pending_col = collections["sos_auto_pending"]
+
+    pending_doc = await auto_pending_col.find_one(
+        {"id": pending_id, "user_id": body.user_id},
+        {"_id": 0, "status": 1},
+    )
+    if not pending_doc:
+        raise HTTPException(status_code=404, detail="Automatic SOS pending event not found")
+
+    if pending_doc.get("status") != "pending":
+        return {
+            "success": False,
+            "pending_id": pending_id,
+            "status": pending_doc.get("status"),
+            "message": "Pending media can only be updated while status is pending",
+        }
+
+    media_updates = {}
+    if body.camera_front_image is not None:
+        media_updates["sos_payload.camera_front_image"] = persist_sos_image(
+            body.camera_front_image, body.user_id, pending_id, "front"
+        )
+    if body.camera_back_image is not None:
+        media_updates["sos_payload.camera_back_image"] = persist_sos_image(
+            body.camera_back_image, body.user_id, pending_id, "back"
+        )
+    if body.audio_10s_url is not None:
+        media_updates["sos_payload.audio_10s_url"] = persist_sos_audio(
+            body.audio_10s_url, body.user_id, pending_id
+        )
+
+    if not media_updates:
+        raise HTTPException(status_code=400, detail="No media fields provided")
+
+    media_updates["media_updated_at"] = datetime.now().isoformat()
+    await auto_pending_col.update_one(
+        {"id": pending_id, "user_id": body.user_id},
+        {"$set": media_updates},
+    )
+
+    return {
+        "success": True,
+        "pending_id": pending_id,
+        "status": "pending",
+        "message": "Automatic SOS pending media updated",
     }
 
 

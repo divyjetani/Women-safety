@@ -11,6 +11,7 @@ from utils.logger import logger
 
 _whisper_model = None
 _model_lock = threading.Lock()
+_transcribe_lock = threading.Lock()
 _whisper_unavailable = False
 
 
@@ -46,6 +47,12 @@ def _mark_whisper_unavailable_from_runtime_error(exc: Exception) -> None:
 
 def prewarm_whisper_runtime() -> None:
     _prime_torch_runtime()
+    # Preload model at backend startup so first live chunk does not pay load latency.
+    model = _get_model()
+    if model is not None:
+        logger.info(f"✅ Whisper ready to transcribe | model={_resolve_model_name()}")
+    else:
+        logger.warning("⚠️ Whisper is not ready at startup; transcription will be skipped until runtime is available")
 
 
 def _resolve_model_name() -> str:
@@ -75,6 +82,7 @@ def _get_model():
                     return None
                 try:
                     _whisper_model = whisper.load_model(model_name)
+                    logger.info(f"✅ Whisper ready to transcribe | model={model_name}")
                 except OSError as exc:
                     _whisper_unavailable = True
                     if _is_windows_torch_dll_error(exc):
@@ -99,13 +107,15 @@ def _sync_transcribe(file_path: str) -> str:
         if model is None:
             logger.debug(f"Whisper skipped: model unavailable | file={path.name}")
             return ""
-        response = model.transcribe(
-            str(path),
-            fp16=False,
-            language="en",
-            task="transcribe",
-            temperature=0,
-        )
+        # Whisper model inference is not guaranteed thread-safe; serialize transcribe calls.
+        with _transcribe_lock:
+            response = model.transcribe(
+                str(path),
+                fp16=False,
+                language="en",
+                task="transcribe",
+                temperature=0,
+            )
         transcript = (response.get("text", "") if isinstance(response, dict) else "").strip()
         logger.debug(
             f"Whisper transcript | file={path.name} | chars={len(transcript)}\n\n"
@@ -125,3 +135,7 @@ def _sync_transcribe(file_path: str) -> str:
 
 async def transcribe_audio_file(file_path: str) -> str:
     return await asyncio.to_thread(_sync_transcribe, file_path)
+
+
+def is_whisper_ready() -> bool:
+    return _get_model() is not None

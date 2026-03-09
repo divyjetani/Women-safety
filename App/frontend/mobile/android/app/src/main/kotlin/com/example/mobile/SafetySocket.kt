@@ -6,6 +6,7 @@ import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.*
 import okhttp3.*
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -27,6 +28,7 @@ object SafetySocket {
     private var threatCallback: (() -> Unit)? = null
     private var readyCallback: (() -> Unit)? = null
     @Volatile private var lastNotReadyLogAt = 0L
+    @Volatile private var audioSendCount = 0L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -60,26 +62,27 @@ object SafetySocket {
 
         Log.i("SafetySocket", "🔧 Opening WebSocket")
 
-        val prefs = appContext?.getSharedPreferences("bubble_app", MODE_PRIVATE)
-        val userId = prefs?.getInt("user_id", -1) ?: -1
-        val ip = prefs?.getString("ip_address", "") ?: ""
-        val wsUrl = if (userId > 0) {
-            "ws://$ip:8000/ws?user_id=$userId"
-        } else {
-            "ws://$ip:8000/ws"
-        }
+        try {
+            val wsUrl = resolveWsUrl()
+            if (wsUrl.isNullOrBlank()) {
+                Log.w("SafetySocket", "Missing/invalid ip_address; cannot open WS")
+                cleanupAndReconnect()
+                return
+            }
+            Log.i("SafetySocket", "🌐 WS URL resolved: $wsUrl")
 
-        val request = Request.Builder()
-            .url(wsUrl)
-            .build()
+            val request = Request.Builder()
+                .url(wsUrl)
+                .build()
 
-        socket = client!!.newWebSocket(request, object : WebSocketListener() {
+            socket = client!!.newWebSocket(request, object : WebSocketListener() {
 
             override fun onOpen(ws: WebSocket, response: Response) {
                 connected = true
                 readyForAudio = true
                 reconnecting.set(false)
                 Log.i("SafetySocket", "✅ WS OPEN (${response.code})")
+                ws.send("{\"type\":\"client_ready\",\"source\":\"android_safety_service\"}")
                 readyCallback?.invoke()
             }
 
@@ -107,7 +110,46 @@ object SafetySocket {
                 )
                 cleanupAndReconnect()
             }
-        })
+            })
+        } catch (e: Exception) {
+            Log.e("SafetySocket", "Error opening WS: ${e.message}", e)
+            cleanupAndReconnect()
+        }
+    }
+
+    private fun resolveWsUrl(): String? {
+        val ctx = appContext ?: return null
+        val flutterPrefs = ctx.getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+        val bubblePrefs = ctx.getSharedPreferences("bubble_app", MODE_PRIVATE)
+
+        val rawIp = (flutterPrefs.getString("flutter.ip_address", "") ?: "").trim()
+        if (rawIp.isEmpty()) return null
+
+        var base = rawIp
+        if (!base.startsWith("http://") && !base.startsWith("https://")) {
+            base = "http://$base"
+        }
+
+        val parsed = base.toHttpUrlOrNull() ?: return null
+
+        val userIdFromBubble = bubblePrefs.getInt("user_id", -1)
+        val userIdFromFlutter = (flutterPrefs.all["flutter.cached_user_id"] as? Number)?.toInt() ?: -1
+        val userId = if (userIdFromBubble > 0) userIdFromBubble else userIdFromFlutter
+
+        val builder = parsed.newBuilder()
+            .encodedPath("/ws")
+            .query(null)
+
+        if (userId > 0) {
+            builder.addQueryParameter("user_id", userId.toString())
+        }
+
+        val httpUrl = builder.build().toString()
+        return if (parsed.isHttps) {
+            httpUrl.replaceFirst("https://", "wss://")
+        } else {
+            httpUrl.replaceFirst("http://", "ws://")
+        }
     }
 
     // =========================
@@ -159,9 +201,12 @@ object SafetySocket {
         }
 
         if (sent) {
-            Log.i(TAG,
-                "🎤 Audio sent | samples=$size | bytes=${bytes.size} | time=${System.currentTimeMillis()}"
-            )
+            audioSendCount += 1
+            if (audioSendCount % 20L == 0L) {
+                Log.i(TAG,
+                    "🎤 Audio sent | count=$audioSendCount | samples=$size | bytes=${bytes.size}"
+                )
+            }
         } else {
             Log.w(TAG, "⚠️ Audio send failed")
         }

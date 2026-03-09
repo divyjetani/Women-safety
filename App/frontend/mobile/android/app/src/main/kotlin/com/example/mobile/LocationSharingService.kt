@@ -21,6 +21,7 @@ import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.tasks.CancellationToken
 import com.google.android.gms.tasks.OnTokenCanceledListener
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
 class LocationSharingService : Service() {
@@ -48,11 +49,9 @@ class LocationSharingService : Service() {
         prefs = getSharedPreferences("bubble_app", Context.MODE_PRIVATE)
         requestQueue = Volley.newRequestQueue(this)
 
-        // Prompt user for IP if not set
-        val ip = prefs.getString("ip_address", null)
-        if (ip == null || ip.isEmpty()) {
-            // TODO: Show dialog/input to user to enter IP, then save to prefs
-            // Example: prefs.edit().putString("ip_address", userInputIp).apply()
+        val backendBase = resolveBackendBaseUrl()
+        if (backendBase == null) {
+            Log.w(TAG, "⚠️ Missing/invalid server IP in SharedPreferences (ip_address)")
         }
 
         createNotificationChannel()
@@ -150,7 +149,7 @@ class LocationSharingService : Service() {
             userId = if (userId > 0) {
                 userId
             } else {
-                flutterPrefs.getInt("flutter.user_id", -1)
+                (flutterPrefs.all["flutter.cached_user_id"] as? Number)?.toInt() ?: -1
             }
         }
 
@@ -169,9 +168,12 @@ class LocationSharingService : Service() {
                 put("incognito", incognito)
             }
 
-            // Use the backend location sharing endpoint
-            val ip = prefs.getString("ip_address", "")
-            val url = "http://$ip:8000/bubble/share-location"
+            val backendBase = resolveBackendBaseUrl()
+            if (backendBase == null) {
+                Log.w(TAG, "⚠️ Cannot share location: backend URL missing/invalid")
+                return
+            }
+            val url = "$backendBase/bubble/share-location"
 
             val request = object : JsonObjectRequest(
                 Method.POST, url, body,
@@ -193,6 +195,27 @@ class LocationSharingService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "❌ Error sharing location: ${e.message}")
         }
+    }
+
+    private fun resolveBackendBaseUrl(): String? {
+        val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val raw = (flutterPrefs.getString("flutter.ip_address", "") ?: "").trim()
+        if (raw.isEmpty()) return null
+
+        val withScheme = if (raw.startsWith("http://") || raw.startsWith("https://")) {
+            raw
+        } else {
+            "http://$raw"
+        }
+
+        val parsed = withScheme.toHttpUrlOrNull() ?: return null
+        return parsed.newBuilder()
+            .encodedPath("/")
+            .query(null)
+            .fragment(null)
+            .build()
+            .toString()
+            .trimEnd('/')
     }
 
     private fun getBatteryPercentage(): Int {

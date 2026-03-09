@@ -12,6 +12,7 @@ class WebSocketService {
   IOWebSocketChannel? _channel;
   StreamSubscription? _sub;
   bool _connecting = false;
+  bool _manualClose = false;
   int? _lastUserId;
   static final StreamController<Map<String, dynamic>> _threatController =
       StreamController<Map<String, dynamic>>.broadcast();
@@ -30,6 +31,7 @@ class WebSocketService {
   Future<void> connect([int? userId]) async {
     if (_channel != null || _connecting) return;
     _connecting = true;
+    _manualClose = false;
     _lastUserId = userId ?? _lastUserId;
     try {
       _channel = IOWebSocketChannel.connect(_wsUrl(userId: _lastUserId));
@@ -48,6 +50,12 @@ class WebSocketService {
           }
         }
       }, onDone: _onDone, onError: _onError, cancelOnError: true);
+    } catch (err) {
+      _disposeChannel();
+      WebSocketService.showConnectionError?.call(err);
+      if (!_manualClose) {
+        Future.delayed(const Duration(seconds: 2), () => connect(_lastUserId));
+      }
     } finally {
       _connecting = false;
     }
@@ -55,13 +63,18 @@ class WebSocketService {
 
   void _onDone() {
     _disposeChannel();
+    if (_manualClose) return;
     Future.delayed(const Duration(seconds: 2), () => connect(_lastUserId));
   }
 
   void _onError(Object err) {
     _disposeChannel();
+    WebSocketService.showConnectionError?.call(err);
+    if (_manualClose) return;
     Future.delayed(const Duration(seconds: 2), () => connect(_lastUserId));
   }
+
+  static void Function(Object err)? showConnectionError;
 
   Future<void> sendAudioSamples(List<int> samples) async {
     if (_channel == null) await connect();
@@ -82,6 +95,7 @@ class WebSocketService {
   }
 
   Future<void> close() async {
+    _manualClose = true;
     await _sub?.cancel();
     await _channel?.sink.close();
     _disposeChannel();

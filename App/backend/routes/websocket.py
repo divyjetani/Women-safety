@@ -11,7 +11,7 @@ from utils.logger import logger
 from utils.audio import save_wav
 from config.settings import AUDIO_CHUNKS_DIR, AUDIO_CONFIG
 from database.collections import get_collections
-from services.whisper_client import transcribe_audio_file
+from services.whisper_client import transcribe_audio_file, is_whisper_ready
 from services.text_threat_classifier import TextThreatClassifier
 
 router = APIRouter(tags=["websocket"])
@@ -116,6 +116,9 @@ async def websocket_endpoint(ws: WebSocket):
 
     await ws.accept()
     logger.info("🟢 Client connected to audio WS")
+    logger.info(
+        f"🎙️ Whisper runtime status for this session: {'ready to transcribe' if is_whisper_ready() else 'not ready'}"
+    )
 
     session_started_at = datetime.utcnow().isoformat()
     confidence_samples: list[float] = []
@@ -123,6 +126,8 @@ async def websocket_endpoint(ws: WebSocket):
     audio_buffer: list = []
     buffer_lock = asyncio.Lock()
     threat_score = 0
+    received_audio_frames = 0
+    received_audio_samples = 0
     running = True
     sample_rate = AUDIO_CONFIG["SAMPLE_RATE"]
     chunk_seconds = 10
@@ -141,6 +146,7 @@ async def websocket_endpoint(ws: WebSocket):
 
         transcript = await transcribe_audio_file(filename)
         if not transcript:
+            logger.info(f"📝 Whisper produced empty transcript | file={Path(filename).name}")
             return
 
         prediction = text_classifier.predict(transcript)
@@ -199,6 +205,12 @@ async def websocket_endpoint(ws: WebSocket):
             if msg.get("bytes") is not None:
                 b = msg["bytes"]
                 sample_count = len(b) // 2
+                received_audio_frames += 1
+                received_audio_samples += sample_count
+                if received_audio_frames % 20 == 0:
+                    logger.info(
+                        f"🎤 Audio WS ingest | frames={received_audio_frames} | total_samples={received_audio_samples}"
+                    )
 
                 samples = struct.unpack(
                     "<" + "h" * sample_count,
@@ -231,6 +243,12 @@ async def websocket_endpoint(ws: WebSocket):
                         parsed_samples = []
 
                     if parsed_samples:
+                        received_audio_frames += 1
+                        received_audio_samples += len(parsed_samples)
+                        if received_audio_frames % 20 == 0:
+                            logger.info(
+                                f"🎤 Audio WS ingest(text) | frames={received_audio_frames} | total_samples={received_audio_samples}"
+                            )
                         async with buffer_lock:
                             audio_buffer.extend(parsed_samples)
 

@@ -13,14 +13,30 @@ object SOSBridge {
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startService" -> {
-                    val i = Intent(context, SafetyService::class.java)
-                    context.startForegroundService(i)
-                    result.success(null)
+                    try {
+                        val i = Intent(context, SafetyService::class.java)
+                        context.startForegroundService(i)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error(
+                            "START_SERVICE_FAILED",
+                            e.message ?: "Unable to start safety service",
+                            null
+                        )
+                    }
                 }
                 "stopService" -> {
-                    context.stopService(Intent(context, SafetyService::class.java))
-                    context.stopService(Intent(context, LocationSharingService::class.java))
-                    result.success(null)
+                    try {
+                        context.stopService(Intent(context, SafetyService::class.java))
+                        context.stopService(Intent(context, LocationSharingService::class.java))
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error(
+                            "STOP_SERVICE_FAILED",
+                            e.message ?: "Unable to stop safety service",
+                            null
+                        )
+                    }
                 }
                 else -> result.notImplemented()
             }

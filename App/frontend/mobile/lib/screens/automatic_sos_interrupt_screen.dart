@@ -2,8 +2,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
-import 'dart:ui' as ui;
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:camera/camera.dart';
@@ -96,20 +94,6 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
         throw Exception('User not logged in');
       }
 
-      if (mounted) {
-        setState(() {
-          _pendingSetupStatus = 'Capturing selfie image...';
-        });
-      }
-      final capturedSelfie = await _captureSelfieBase64();
-
-      if (mounted) {
-        setState(() {
-          _pendingSetupStatus = 'Recording 10s audio clip...';
-        });
-      }
-      final capturedAudio = await _capture10sAudioBase64();
-
       Position? position;
       try {
         position = await Geolocator.getCurrentPosition(
@@ -150,9 +134,9 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
         lng: position?.longitude,
         battery: battery,
         bubbleCode: selectedBubbleCode,
-        cameraFrontImage: capturedSelfie.isNotEmpty ? capturedSelfie : user.faceImage,
+        cameraFrontImage: user.faceImage,
         cameraBackImage: user.faceImage,
-        audio10sUrl: capturedAudio,
+        audio10sUrl: null,
         message: 'Automatic SOS triggered. Reason: ${widget.reason}',
       );
 
@@ -167,6 +151,9 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
 
       _startFlashCountdown();
       _startStatusPolling();
+
+      // Record/capture media in background while countdown is already running.
+      unawaited(_captureAndUploadPendingMedia(user.id, pendingId, user.faceImage));
     } catch (_) {
       if (!mounted) return;
       AppSnackBar.show(
@@ -183,6 +170,39 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
         });
       } else {
         _isStartingPending = false;
+      }
+    }
+  }
+
+  Future<void> _captureAndUploadPendingMedia(int userId, String pendingId, String fallbackFaceImage) async {
+    try {
+      if (mounted) {
+        setState(() {
+          _pendingSetupStatus = 'Recording 10s audio in background...';
+        });
+      }
+
+      final captures = await Future.wait<String>([
+        _captureSelfieBase64(),
+        _capture10sAudioBase64(),
+      ]);
+      final capturedSelfie = captures[0];
+      final capturedAudio = captures[1];
+
+      await ApiService.updateAutomaticPendingSosMedia(
+        pendingId: pendingId,
+        userId: userId,
+        cameraFrontImage: capturedSelfie.isNotEmpty ? capturedSelfie : fallbackFaceImage,
+        cameraBackImage: fallbackFaceImage,
+        audio10sUrl: capturedAudio.isNotEmpty ? capturedAudio : null,
+      );
+    } catch (_) {
+      // Best-effort media enrichment; pending SOS should continue even if upload fails.
+    } finally {
+      if (mounted && !_isCompleted) {
+        setState(() {
+          _pendingSetupStatus = '';
+        });
       }
     }
   }
@@ -378,22 +398,20 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
         throw Exception('User not logged in');
       }
 
-      final selfieVerified = await _verifyWithSelfie(user.faceImage);
-
       setState(() {
         _verificationStatus = 'Use fingerprint/device lock to confirm cancel...';
       });
       final authenticated = await _authenticateToCancel();
       if (!mounted) return;
 
-      if (selfieVerified && authenticated) {
+      if (authenticated) {
         await _cancelPendingSos();
         if (!mounted) return;
         Navigator.of(context).pop();
       } else {
         AppSnackBar.show(
           context,
-          'Face or fingerprint verification failed. SOS will continue.',
+          'Device authentication failed. SOS will continue.',
           type: AppSnackBarType.warning,
         );
       }
@@ -429,88 +447,8 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
     await ApiService.cancelAutomaticSos(
       pendingId: pendingId,
       userId: user.id,
-      reason: 'Cancelled by user after authentication',
+      reason: 'false_alert: cancelled by user after device authentication',
     );
-  }
-
-  Future<bool> _verifyWithSelfie(String profileImageBase64) async {
-    late final XFile selfie;
-    CameraController? controller;
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) return false;
-
-      final frontCamera = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-
-      controller = CameraController(
-        frontCamera,
-        ResolutionPreset.low,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.jpeg,
-      );
-
-      await controller.initialize();
-      await controller.setFlashMode(FlashMode.off);
-      selfie = await controller.takePicture();
-    } catch (_) {
-      return false;
-    } finally {
-      await controller?.dispose();
-    }
-
-    if (profileImageBase64.trim().isEmpty) {
-      return true;
-    }
-
-    try {
-      final profileBytes = base64Decode(profileImageBase64);
-      final selfieBytes = await File(selfie.path).readAsBytes();
-
-      final score = await _histogramSimilarity(profileBytes, selfieBytes);
-      return score >= 0.80;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<List<double>> _extractHistogram(Uint8List bytes) async {
-    final codec = await ui.instantiateImageCodec(bytes, targetWidth: 64, targetHeight: 64);
-    final frame = await codec.getNextFrame();
-    final image = frame.image;
-    final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
-    if (byteData == null) return List.filled(16, 0);
-
-    final data = byteData.buffer.asUint8List();
-    final bins = List<double>.filled(16, 0);
-
-    for (int i = 0; i + 3 < data.length; i += 4) {
-      final r = data[i].toDouble();
-      final g = data[i + 1].toDouble();
-      final b = data[i + 2].toDouble();
-      final lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
-      final bin = min(15, max(0, (lum * 15).round()));
-      bins[bin] += 1;
-    }
-
-    final sum = bins.fold<double>(0, (a, v) => a + v);
-    if (sum <= 0) return bins;
-    return bins.map((v) => v / sum).toList();
-  }
-
-  Future<double> _histogramSimilarity(Uint8List aBytes, Uint8List bBytes) async {
-    final h1 = await _extractHistogram(aBytes);
-    final h2 = await _extractHistogram(bBytes);
-
-    double diff = 0;
-    for (int i = 0; i < h1.length; i++) {
-      diff += (h1[i] - h2[i]).abs();
-    }
-
-    final double normalizedDiff = (diff / 2).clamp(0.0, 1.0).toDouble();
-    return 1.0 - normalizedDiff;
   }
 
   @override

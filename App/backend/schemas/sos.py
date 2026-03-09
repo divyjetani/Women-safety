@@ -55,3 +55,10 @@ class AutomaticSOSStartRequest(BaseModel):
 class AutomaticSOSCancelRequest(BaseModel):
     user_id: int
     reason: Optional[str] = None
+
+
+class AutomaticSOSMediaUpdateRequest(BaseModel):
+    user_id: int
+    camera_front_image: Optional[str] = None
+    camera_back_image: Optional[str] = None
+    audio_10s_url: Optional[str] = None

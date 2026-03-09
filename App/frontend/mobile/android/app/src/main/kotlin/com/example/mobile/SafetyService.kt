@@ -39,6 +39,7 @@ class SafetyService : Service(), SensorEventListener {
         running = true
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
+        Log.i("SafetyService", "🚀 SafetyService started")
         startLocationMonitoringService()
         // Start WebSocket connection when service starts
         SafetySocket.connect(
@@ -46,6 +47,8 @@ class SafetyService : Service(), SensorEventListener {
             { onThreatDetected() },
             { maybeStartAudioRecording() }
         )
+        // Start audio capture immediately so chunks are ready when WS becomes available.
+        maybeStartAudioRecording()
         // Start proximity sensing
         startProximitySensing()
     }
@@ -117,6 +120,7 @@ class SafetyService : Service(), SensorEventListener {
     private fun maybeStartAudioRecording() {
         if (audioStarted) return
         audioStarted = true
+        Log.i("SafetyService", "🎤 Initializing audio capture")
         startAudioRecording()
     }
 
