@@ -408,7 +408,10 @@ class ApiService {
   }
 
 
-  static Future<SafetyStats> getSafetyStats(int userId) async {
+  static Future<SafetyStats> getSafetyStats(
+    int userId, {
+    bool manualRefresh = false,
+  }) async {
     try {
       final jsonResponse = await _makeRequest(() async {
         return await http.get(
@@ -422,6 +425,9 @@ class ApiService {
 
       return SafetyStats.fromJson(jsonResponse);
     } catch (e) {
+      if (manualRefresh) {
+        rethrow;
+      }
       final prefs = await SharedPreferences.getInstance();
       final cachedStats = prefs.getString('cached_stats_$userId');
 
@@ -440,7 +446,10 @@ class ApiService {
     }
   }
 
-  static Future<List<RecentActivity>> getRecentActivity(int userId) async {
+  static Future<List<RecentActivity>> getRecentActivity(
+    int userId, {
+    bool manualRefresh = false,
+  }) async {
     try {
       final jsonList = await _makeListRequest(() async {
         return await http.get(
@@ -454,6 +463,9 @@ class ApiService {
 
       return _parseRecentActivities(jsonList);
     } catch (e) {
+      if (manualRefresh) {
+        rethrow;
+      }
       final prefs = await SharedPreferences.getInstance();
       final cached = prefs.getString('cached_activity_$userId');
 
@@ -517,13 +529,39 @@ class ApiService {
   }
 
 
-  static Future<Map<String, dynamic>> getProfile(int userId) async {
-    return await _makeRequest(() async {
-      return await http.get(
-        Uri.parse('$baseUrl/profile/$userId'),
-        headers: await _headers(withAuth: true),
-      );
-    });
+  static Future<Map<String, dynamic>> getProfile(
+    int userId, {
+    bool manualRefresh = false,
+  }) async {
+    try {
+      final jsonResponse = await _makeRequest(() async {
+        return await http.get(
+          Uri.parse('$baseUrl/profile/$userId'),
+          headers: await _headers(withAuth: true),
+        );
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_profile_$userId', jsonEncode(jsonResponse));
+
+      return jsonResponse;
+    } catch (e) {
+      if (manualRefresh) {
+        rethrow;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cached_profile_$userId');
+      if (cached != null) {
+        final decoded = jsonDecode(cached);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      }
+      rethrow;
+    }
   }
 
   static Future<Map<String, dynamic>> updateProfile({
@@ -567,15 +605,36 @@ class ApiService {
     });
   }
 
-  static Future<List<dynamic>> getEmergencyContacts(int userId) async {
-    final jsonResponse = await _makeRequest(() async {
-      return await http.get(
-        Uri.parse('$baseUrl/profile/$userId/emergency-contacts'),
-        headers: await _headers(withAuth: true),
-      );
-    });
+  static Future<List<dynamic>> getEmergencyContacts(
+    int userId, {
+    bool manualRefresh = false,
+  }) async {
+    try {
+      final jsonResponse = await _makeRequest(() async {
+        return await http.get(
+          Uri.parse('$baseUrl/profile/$userId/emergency-contacts'),
+          headers: await _headers(withAuth: true),
+        );
+      });
 
-    return (jsonResponse["contacts"] ?? []) as List<dynamic>;
+      final contacts = (jsonResponse["contacts"] ?? []) as List<dynamic>;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_contacts_$userId', jsonEncode(contacts));
+      return contacts;
+    } catch (e) {
+      if (manualRefresh) {
+        rethrow;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cached_contacts_$userId');
+      if (cached != null) {
+        final decoded = jsonDecode(cached);
+        if (decoded is List) {
+          return decoded;
+        }
+      }
+      rethrow;
+    }
   }
 
   static Future<Map<String, dynamic>> addEmergencyContact({
@@ -622,15 +681,36 @@ class ApiService {
   }
 
 
-  static Future<List<dynamic>> getNotifications(int userId) async {
-    final jsonResponse = await _makeRequest(() async {
-      return await http.get(
-        Uri.parse('$baseUrl/notifications/$userId'),
-        headers: await _headers(withAuth: true),
-      );
-    });
+  static Future<List<dynamic>> getNotifications(
+    int userId, {
+    bool manualRefresh = false,
+  }) async {
+    try {
+      final jsonResponse = await _makeRequest(() async {
+        return await http.get(
+          Uri.parse('$baseUrl/notifications/$userId'),
+          headers: await _headers(withAuth: true),
+        );
+      });
 
-    return (jsonResponse["notifications"] ?? []) as List<dynamic>;
+      final notifications = (jsonResponse["notifications"] ?? []) as List<dynamic>;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_notifications_$userId', jsonEncode(notifications));
+      return notifications;
+    } catch (e) {
+      if (manualRefresh) {
+        rethrow;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cached_notifications_$userId');
+      if (cached != null) {
+        final decoded = jsonDecode(cached);
+        if (decoded is List) {
+          return decoded;
+        }
+      }
+      rethrow;
+    }
   }
 
   static Future<Map<String, dynamic>> markNotificationRead({
@@ -687,6 +767,36 @@ class ApiService {
         body: jsonEncode({
           'user_id': userId,
           'resolved_by': 'user',
+          'reason': reason,
+        }),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> getSosEventStatus({
+    required int userId,
+    required String eventId,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.get(
+        Uri.parse('$baseUrl/sos/$eventId/status?user_id=$userId'),
+        headers: await _headers(withAuth: true),
+      );
+    });
+  }
+
+  static Future<Map<String, dynamic>> cancelMistakenSos({
+    required int userId,
+    required String eventId,
+    String? reason,
+  }) async {
+    return await _makeRequest(() async {
+      return await http.patch(
+        Uri.parse('$baseUrl/sos/$eventId/cancel-mistaken'),
+        headers: await _headers(withAuth: true),
+        body: jsonEncode({
+          'user_id': userId,
+          'resolved_by': 'owner',
           'reason': reason,
         }),
       );
@@ -1054,13 +1164,36 @@ class ApiService {
 
   static Future<Map<String, dynamic>> getAnalyticsOverview({
     required int userId,
+    bool manualRefresh = false,
   }) async {
-    return await _makeRequest(() async {
-      return await http.get(
-        Uri.parse('$baseUrl/analytics/overview?user_id=$userId'),
-        headers: await _headers(withAuth: true),
-      );
-    });
+    try {
+      final jsonResponse = await _makeRequest(() async {
+        return await http.get(
+          Uri.parse('$baseUrl/analytics/overview?user_id=$userId'),
+          headers: await _headers(withAuth: true),
+        );
+      });
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('cached_analytics_overview_$userId', jsonEncode(jsonResponse));
+      return jsonResponse;
+    } catch (e) {
+      if (manualRefresh) {
+        rethrow;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString('cached_analytics_overview_$userId');
+      if (cached != null) {
+        final decoded = jsonDecode(cached);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      }
+      rethrow;
+    }
   }
 
   static Future<Map<String, dynamic>> generateAiSuggestions({

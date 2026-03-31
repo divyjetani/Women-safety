@@ -1,5 +1,6 @@
 // App/frontend/mobile/lib/screens/analytics_screen.dart
 import 'package:flutter/material.dart';
+import 'dart:async';
 
 import '../services/api_service.dart';
 import '../widgets/app_snackbar.dart';
@@ -82,8 +83,14 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
     averageAudioSummary = cache.averageAudioSummary;
   }
 
-  Future<void> _loadAnalyticsData({bool forceRefresh = false}) async {
-    setState(() => loading = true);
+  Future<void> _loadAnalyticsData({
+    bool forceRefresh = false,
+    bool silent = false,
+    bool manualRefresh = false,
+  }) async {
+    if (!silent) {
+      setState(() => loading = true);
+    }
     try {
       final currentUser = await ApiService.getCurrentUser();
       if (currentUser == null) {
@@ -98,12 +105,19 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
           _applySessionCache(cache);
           loading = false;
         });
+        unawaited(_loadAnalyticsData(forceRefresh: true, silent: true));
         return;
       }
 
       _userId = currentUser.id;
-      final profile = await ApiService.getProfile(currentUser.id);
-      final overview = await ApiService.getAnalyticsOverview(userId: currentUser.id);
+      final profile = await ApiService.getProfile(
+        currentUser.id,
+        manualRefresh: manualRefresh,
+      );
+      final overview = await ApiService.getAnalyticsOverview(
+        userId: currentUser.id,
+        manualRefresh: manualRefresh,
+      );
 
       final newCache = _AnalyticsSessionCache(
         userId: currentUser.id,
@@ -125,9 +139,19 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
         _applySessionCache(newCache);
         loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      if (silent) {
+        return;
+      }
       if (mounted) {
         setState(() => loading = false);
+      }
+      if (manualRefresh && mounted) {
+        AppSnackBar.show(
+          context,
+          e.toString().replaceAll('Exception:', '').trim(),
+          type: AppSnackBarType.error,
+        );
       }
     }
   }
@@ -138,7 +162,7 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
     setState(() => generatingAi = true);
     try {
       await ApiService.generateAiSuggestions(userId: _userId);
-      await _loadAnalyticsData(forceRefresh: true);
+      await _loadAnalyticsData(forceRefresh: true, manualRefresh: true);
       if (!mounted) return;
       AppSnackBar.show(
         context,
@@ -173,7 +197,7 @@ class _AnalyticsScreenV2State extends State<AnalyticsScreenV2> {
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: () => _loadAnalyticsData(forceRefresh: true),
+          onRefresh: () => _loadAnalyticsData(forceRefresh: true, manualRefresh: true),
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),

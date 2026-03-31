@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:local_auth/local_auth.dart';
+import 'package:local_auth/error_codes.dart' as auth_error;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -55,21 +56,33 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
   Timer? _statusPollTimer;
 
   Future<bool> _authenticateToCancel() async {
-    final isSupported = await _localAuth.isDeviceSupported();
-    final canCheckBiometric = await _localAuth.canCheckBiometrics;
+    try {
+      final isSupported = await _localAuth.isDeviceSupported();
+      final canCheckBiometric = await _localAuth.canCheckBiometrics;
 
-    if (!isSupported && !canCheckBiometric) {
-      return true;
+      if (!isSupported && !canCheckBiometric) {
+        // No auth method present on this device; allow cancel.
+        return true;
+      }
+
+      return await _localAuth.authenticate(
+        localizedReason: 'Authenticate to cancel automatic SOS',
+        options: const AuthenticationOptions(
+          biometricOnly: false,
+          stickyAuth: true,
+          useErrorDialogs: true,
+        ),
+      );
+    } on PlatformException catch (e) {
+      final code = e.code;
+      if (code == auth_error.notAvailable ||
+          code == auth_error.notEnrolled ||
+          code == auth_error.passcodeNotSet) {
+        // "if present" behavior: continue when lock/biometric is unavailable.
+        return true;
+      }
+      rethrow;
     }
-
-    return await _localAuth.authenticate(
-      localizedReason: 'Authenticate to cancel automatic SOS',
-      options: const AuthenticationOptions(
-        biometricOnly: false,
-        stickyAuth: false,
-        useErrorDialogs: true,
-      ),
-    );
   }
 
   @override
@@ -385,7 +398,7 @@ class _AutomaticSosInterruptScreenState extends State<AutomaticSosInterruptScree
     if (_checkingStop || _isCompleted) return;
     setState(() {
       _checkingStop = true;
-      _verificationStatus = 'Capturing selfie for face verification...';
+      _verificationStatus = 'Preparing authentication...';
     });
 
     _flashTimer?.cancel();

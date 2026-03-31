@@ -1,5 +1,6 @@
 // App/frontend/mobile/lib/screens/notifications_screen.dart
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -144,7 +145,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
-  Future<void> _load({bool forceRefresh = false}) async {
+  Future<void> _load({
+    bool forceRefresh = false,
+    bool silent = false,
+    bool manualRefresh = false,
+  }) async {
     try {
       final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
       if (user == null) {
@@ -162,17 +167,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           loading = false;
           errorMessage = null;
         });
+        unawaited(_load(forceRefresh: true, silent: true));
         return;
       }
 
-      setState(() {
-        loading = true;
-        errorMessage = null;
-      });
+      if (!silent) {
+        setState(() {
+          loading = true;
+          errorMessage = null;
+        });
+      }
 
-      final data = await ApiService.getNotifications(user.id);
+      final data = await ApiService.getNotifications(
+        user.id,
+        manualRefresh: manualRefresh,
+      );
       final parsed = data.map((e) => Map<String, dynamic>.from(e)).toList();
-  _sortNotificationsLatestFirst(parsed);
+      _sortNotificationsLatestFirst(parsed);
       _sessionNotificationsByUser[user.id] = List<Map<String, dynamic>>.from(parsed);
 
       setState(() {
@@ -180,6 +191,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         loading = false;
       });
     } catch (e) {
+      if (silent) {
+        return;
+      }
       setState(() {
         loading = false;
         errorMessage = e.toString().replaceAll("Exception:", "").trim();
@@ -246,6 +260,112 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  String _humanizeAutoStatus(String status) {
+    switch (status) {
+      case 'pending':
+        return 'Countdown in progress';
+      case 'sent':
+        return 'SOS sent';
+      case 'cancelled':
+        return 'SOS cancelled by user';
+      case 'failed':
+        return 'SOS failed to send';
+      default:
+        return status;
+    }
+  }
+
+  Future<void> _showCurrentSosStatus(Map<String, dynamic> notification) async {
+    final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    if (user == null) return;
+
+    final pendingId = (notification['auto_pending_id'] ?? '').toString().trim();
+    final eventId = (notification['sos_event_id'] ?? '').toString().trim();
+
+    if (pendingId.isEmpty && eventId.isEmpty) return;
+
+    String title = 'SOS Status';
+    String body = 'Status unavailable';
+
+    try {
+      if (pendingId.isNotEmpty) {
+        final data = await ApiService.getAutomaticSosStatus(pendingId: pendingId);
+        final status = (data['status'] ?? 'pending').toString();
+        final seconds = (data['seconds_remaining'] as num?)?.toInt() ?? 0;
+        title = 'Automatic SOS Status';
+        body = status == 'pending'
+            ? 'Countdown running: $seconds seconds remaining'
+            : _humanizeAutoStatus(status);
+      } else {
+        final data = await ApiService.getSosEventStatus(userId: user.id, eventId: eventId);
+        final status = (data['status'] ?? 'active').toString();
+        final reason = (data['resolve_reason'] ?? '').toString().trim();
+        title = 'SOS Event Status';
+        body = status == 'active'
+            ? 'SOS is active'
+            : (reason.isNotEmpty ? 'SOS $status\nReason: $reason' : 'SOS $status');
+      }
+    } catch (e) {
+      body = e.toString().replaceAll('Exception:', '').trim();
+    }
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(body),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmAndCancelMistakenSos(String eventId) async {
+    final user = Provider.of<AuthProvider>(context, listen: false).currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Mark SOS as Mistaken?'),
+            content: const Text(
+              'This will notify everyone who received this SOS that it was sent mistakenly or has been resolved.',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+              ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Confirm')),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) return;
+
+    try {
+      final resp = await ApiService.cancelMistakenSos(
+        userId: user.id,
+        eventId: eventId,
+        reason: 'SOS was sent mistakenly or has been resolved',
+      );
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        (resp['message'] ?? 'SOS updated').toString(),
+        type: AppSnackBarType.success,
+      );
+      _load(forceRefresh: true);
+    } catch (e) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        e.toString().replaceAll('Exception:', '').trim(),
+        type: AppSnackBarType.error,
+      );
+    }
+  }
+
   Color _typeColor(String type) {
     switch (type.toLowerCase()) {
       case 'threat':
@@ -271,6 +391,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   @override
   Widget build(BuildContext context) {
     final txt = Theme.of(context).textTheme;
+    final currentUser = Provider.of<AuthProvider>(context, listen: false).currentUser;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -280,7 +401,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         backgroundColor: Colors.transparent,
       ),
       body: RefreshIndicator(
-        onRefresh: () => _load(forceRefresh: true),
+        onRefresh: () => _load(forceRefresh: true, manualRefresh: true),
         child: loading
             ? ListView(
           padding: const EdgeInsets.all(16),
@@ -348,6 +469,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             final type = (n['type'] ?? 'info').toString();
             final cause = (n['cause'] ?? body).toString();
             final isFromGroupMember = n['from_group_member'] == true;
+            final senderUserId = (n['member_user_id'] is num) ? (n['member_user_id'] as num).toInt() : null;
             final memberName = (n['member_name'] ?? 'Group Member').toString();
             final memberPhone = (n['member_phone'] ?? '').toString();
             final memberLocation = (n['member_location'] ?? 'Location unavailable').toString();
@@ -357,8 +479,31 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
             final resolvedCameraImage = _resolveBackendUrl(memberCameraImage);
             final hasCameraImage = memberCameraImage.trim().isNotEmpty;
             final hasAudioClip = audio10sUrl.trim().isNotEmpty;
+            final autoPendingId = (n['auto_pending_id'] ?? '').toString();
+            final sosEventId = (n['sos_event_id'] ?? '').toString();
+            final canOpenStatus = autoPendingId.trim().isNotEmpty || sosEventId.trim().isNotEmpty;
+            final sosStatus = (n['sos_status'] ?? '').toString().trim().toLowerCase();
+            final titleLower = title.toString().toLowerCase();
+            final bodyLower = body.toString().toLowerCase();
+            final alreadyClosedSos =
+              sosStatus == 'cancelled' ||
+              sosStatus == 'cancelled_by_sender' ||
+              sosStatus == 'resolved' ||
+              sosStatus == 'mistaken_or_resolved' ||
+              titleLower.contains('cancelled') ||
+              bodyLower.contains('mistakenly sent') ||
+              bodyLower.contains('marked this sos as mistakenly sent');
+            final canCancelMistaken =
+              !isFromGroupMember &&
+              sosEventId.trim().isNotEmpty &&
+              currentUser != null &&
+              senderUserId == currentUser.id &&
+              !alreadyClosedSos;
 
-            return Container(
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: canOpenStatus ? () => _showCurrentSosStatus(n) : null,
+              child: Container(
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
                 color: Theme.of(context).cardColor,
@@ -443,6 +588,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
                       ),
                     ),
+                    if (canCancelMistaken)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _confirmAndCancelMistakenSos(sosEventId),
+                          icon: const Icon(Icons.cancel_outlined, size: 18),
+                          label: const Text('Mark as Mistaken SOS'),
+                          style: TextButton.styleFrom(foregroundColor: Colors.orangeAccent),
+                        ),
+                      ),
                     const SizedBox(height: 10),
                     Text(
                       body,
@@ -565,7 +720,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   ],
                 ),
               ),
-            );
+            ));
           }).toList(),
         ),
       ),

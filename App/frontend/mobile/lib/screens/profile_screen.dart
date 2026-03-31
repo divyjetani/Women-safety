@@ -152,7 +152,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     _loadProfileFromCache().then((_) {
       // ✅ fetch latest after showing cached
-      _loadProfile(showLoader: !hasLocalData);
+      _loadProfile(showLoader: !hasLocalData, silent: hasLocalData);
     });
 
     _loadUnreadNotificationState();
@@ -227,7 +227,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
 
-  Future<void> _loadProfile({bool showLoader = true}) async {
+  Future<void> _loadProfile({
+    bool showLoader = true,
+    bool manualRefresh = false,
+    bool silent = false,
+  }) async {
     try {
       if (showLoader) {
         setState(() {
@@ -238,8 +242,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-      final profileJson = await ApiService.getProfile(widget.userId);
-      final contactsJson = await ApiService.getEmergencyContacts(widget.userId);
+      final profileJson = await ApiService.getProfile(
+        widget.userId,
+        manualRefresh: manualRefresh,
+      );
+      final contactsJson = await ApiService.getEmergencyContacts(
+        widget.userId,
+        manualRefresh: manualRefresh,
+      );
 
       final mergedName = _resolveDisplayName(
         authProvider,
@@ -303,6 +313,15 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       });
 
       if (!mounted) return;
+
+      if (manualRefresh) {
+        _showApiErrorPopup(e);
+        return;
+      }
+
+      if (silent) {
+        return;
+      }
 
       // ✅ if we already have cached data, don't annoy user with popup.
       // only show popup if no cached data exists.
@@ -546,7 +565,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _loadProfile,
+          onRefresh: () => _loadProfile(manualRefresh: true),
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: FadeTransition(
@@ -1107,7 +1126,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         title: "Request Timeout",
         message: "Server is taking too long to respond. Please try again.",
         buttonText: "Retry",
-        onRetry: _loadProfile,
+        onRetry: () => _loadProfile(manualRefresh: true),
       );
       return;
     }
@@ -1119,7 +1138,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         err.contains("connection refused")) {
       ErrorDialog.showNetworkError(
         context: context,
-        onRetry: _loadProfile,
+        onRetry: () => _loadProfile(manualRefresh: true),
       );
       return;
     }
@@ -1130,7 +1149,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       title: "Something went wrong",
       message: e.toString().replaceAll("Exception:", "").trim(),
       buttonText: "Retry",
-      onRetry: _loadProfile,
+      onRetry: () => _loadProfile(manualRefresh: true),
     );
   }
 

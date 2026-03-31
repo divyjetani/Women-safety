@@ -27,7 +27,7 @@ async def seed_database(db):
             "id": 1,
             "username": "Divy",
             "email": "divy@email.com",
-            "phone": "+91 1234567890",
+            "phone": "931699087",
             "password_hash": pwd_context.hash("123456"),
             "gender": "female",
             "birthdate": "2001-05-14",

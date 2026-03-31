@@ -33,7 +33,6 @@ import 'package:mobile/screens/fake_call_screen.dart';
 
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:mobile/services/websocket_service.dart';
 import 'package:mobile/services/group_storage.dart';
 import 'package:mobile/services/background_location_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -68,7 +67,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   static const MethodChannel _safetyChannel = MethodChannel('safety_service');
 
-  bool _backgroundSafetyOn = false;
+  bool _audioMonitoringOn = false;
+  bool _locationSharingOn = false;
   bool _isRefreshingLiveScore = false;
   bool _hasUnreadNotifications = false;
   bool _isMaleUser = false;
@@ -103,10 +103,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return '$dd/$mm/$yyyy $hh:$min:$ss';
   }
 
-  Future<void> _toggleBackgroundSafety() async {
+  Future<void> _toggleAudioMonitoring() async {
     final prefs = await SharedPreferences.getInstance();
 
-    if (!_backgroundSafetyOn && _isMaleUser) {
+    if (!_audioMonitoringOn && _isMaleUser) {
       AppSnackBar.show(
         context,
         'Audio monitoring is not available for male users.',
@@ -115,81 +115,207 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
 
-    if (_backgroundSafetyOn) {
+    if (_audioMonitoringOn) {
       await _safetyChannel.invokeMethod('stopService');
-      await WebSocketService().close();
-      await prefs.setBool('bg_safety_on', false);
+      await prefs.setBool('bg_audio_on', false);
 
       setState(() {
-        _backgroundSafetyOn = false;
+        _audioMonitoringOn = false;
       });
 
       return;
     }
 
-    // ▶️ start sharing → ask permissions first
+    // Start audio monitoring only when user explicitly taps the audio control.
     final mic = await Permission.microphone.request();
-    final location = await Permission.location.request();
     final notifications = await Permission.notification.request();
 
-    if (!mic.isGranted || !location.isGranted || !notifications.isGranted) {
+    if (!mic.isGranted || !notifications.isGranted) {
       if (!mounted) return;
 
-      AppSnackBar.show(context, 'Microphone, location and notification permission required', type: AppSnackBarType.warning);
+      AppSnackBar.show(context, 'Microphone and notification permission required', type: AppSnackBarType.warning);
       return;
     }
 
     try {
       await _safetyChannel.invokeMethod('startService');
-      // open websocket when starting monitoring (native service sends audio from kotlin)
-      await WebSocketService().connect(_userId);
-      await prefs.setBool('bg_safety_on', true);
+      await prefs.setBool('bg_audio_on', true);
 
       if (!mounted) return;
       setState(() {
-        _backgroundSafetyOn = true;
+        _audioMonitoringOn = true;
       });
     } catch (err) {
-      await prefs.setBool('bg_safety_on', false);
+      await prefs.setBool('bg_audio_on', false);
       try {
         await _safetyChannel.invokeMethod('stopService');
       } catch (_) {
         // ignore secondary cleanup failures
       }
-      await WebSocketService().close();
 
       if (!mounted) return;
       AppSnackBar.show(
         context,
-        'Could not start monitoring. Check server IP/backend and try again.',
+        'Could not start audio monitoring. Check server IP/backend and try again.',
         type: AppSnackBarType.error,
       );
     }
+  }
+
+  Future<void> _toggleLocationSharing() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    if (_locationSharingOn) {
+      try {
+        await BackgroundLocationService.stopBackgroundLocationSharing();
+      } catch (_) {}
+      await prefs.setBool('bg_location_on', false);
+      if (!mounted) return;
+      setState(() {
+        _locationSharingOn = false;
+      });
+      return;
+    }
+
+    final location = await Permission.location.request();
+    final notifications = await Permission.notification.request();
+    if (!location.isGranted || !notifications.isGranted) {
+      if (!mounted) return;
+      AppSnackBar.show(context, 'Location and notification permission required', type: AppSnackBarType.warning);
+      return;
+    }
+
+    final groups = await GroupStorage.loadGroups();
+    final selectedId = await GroupStorage.loadSelectedGroup();
+    SafetyGroup? selectedGroup;
+    if (selectedId != null) {
+      for (final g in groups) {
+        if (g.id == selectedId) {
+          selectedGroup = g;
+          break;
+        }
+      }
+    }
+    selectedGroup ??= groups.isNotEmpty ? groups.first : null;
+
+    if (selectedGroup == null || (selectedGroup.code ?? '').trim().isEmpty) {
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Select or join a bubble before starting location sharing.',
+        type: AppSnackBarType.warning,
+      );
+      return;
+    }
+
+    try {
+      await BackgroundLocationService.startBackgroundLocationSharing(
+        bubbleCode: (selectedGroup.code ?? selectedGroup.id).trim(),
+        userId: _userId,
+        incognito: prefs.getBool('incognito_mode') ?? false,
+      );
+      await prefs.setBool('bg_location_on', true);
+      if (!mounted) return;
+      setState(() {
+        _locationSharingOn = true;
+      });
+    } catch (_) {
+      await prefs.setBool('bg_location_on', false);
+      if (!mounted) return;
+      AppSnackBar.show(
+        context,
+        'Could not start location sharing. Check bubble and backend.',
+        type: AppSnackBarType.error,
+      );
+    }
+  }
+
+  Future<void> _openMonitoringControls() async {
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (sheetCtx, setSheetState) {
+          return Container(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 20),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 5,
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).dividerColor.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  Text('Monitoring Controls', style: Theme.of(context).textTheme.titleLarge),
+                  const SizedBox(height: 10),
+                  Text(
+                    'Start/stop audio threat detection and location sharing independently.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await _toggleAudioMonitoring();
+                        if (!mounted) return;
+                        setSheetState(() {});
+                      },
+                      icon: Icon(_audioMonitoringOn ? Icons.stop_circle : Icons.mic),
+                      label: Text(_audioMonitoringOn ? 'Stop Audio Detection' : 'Start Audio Detection'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await _toggleLocationSharing();
+                        if (!mounted) return;
+                        setSheetState(() {});
+                      },
+                      icon: Icon(_locationSharingOn ? Icons.location_off : Icons.my_location),
+                      label: Text(_locationSharingOn ? 'Stop Location Sharing' : 'Start Location Sharing'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
 
   @override
   void initState() {
     super.initState();
-    _loadBackgroundSafetyState();
-
-    WebSocketService.showConnectionError = (_) {
-      if (!mounted) return;
-      AppSnackBar.show(
-        context,
-        'Monitoring connection lost. Reconnecting...',
-        type: AppSnackBarType.warning,
-      );
-    };
+    _loadMonitoringStates();
 
     // ✅ listen for service stop callback from native code
     _safetyChannel.setMethodCallHandler((call) async {
       if (call.method == 'onServiceStopped') {
         if (mounted) {
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('bg_safety_on', false);
+          await prefs.setBool('bg_audio_on', false);
           setState(() {
-            _backgroundSafetyOn = false;
+            _audioMonitoringOn = false;
           });
         }
       }
@@ -230,10 +356,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _loadBackgroundSafetyState() async {
+  Future<void> _loadMonitoringStates() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _backgroundSafetyOn = prefs.getBool('bg_safety_on') ?? false;
+      _audioMonitoringOn = prefs.getBool('bg_audio_on') ?? false;
+      _locationSharingOn = prefs.getBool('bg_location_on') ?? false;
     });
   }
 
@@ -241,7 +368,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _timeoutTimer?.cancel();
-    WebSocketService.showConnectionError = null;
     super.dispose();
   }
 
@@ -342,7 +468,11 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  Future<void> _loadHomeData({bool forceRefresh = false}) async {
+  Future<void> _loadHomeData({
+    bool forceRefresh = false,
+    bool silent = false,
+    bool manualRefresh = false,
+  }) async {
     if (_userId == 0) return;
 
     final cachedStats = _sessionStatsByUser[_userId];
@@ -356,22 +486,24 @@ class _HomeScreenState extends State<HomeScreen> {
         _errorMessage = '';
         _timedOut = false;
       });
+      unawaited(_loadHomeData(forceRefresh: true, silent: true));
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-      _errorMessage = '';
-      _timedOut = false;
-    });
-
-    _startTimeoutWatcher();
+    if (!silent) {
+      setState(() {
+        _isLoading = true;
+        _hasError = false;
+        _errorMessage = '';
+        _timedOut = false;
+      });
+      _startTimeoutWatcher();
+    }
 
     try {
       final results = await Future.wait([
-        ApiService.getSafetyStats(_userId),
-        ApiService.getRecentActivity(_userId),
+        ApiService.getSafetyStats(_userId, manualRefresh: manualRefresh),
+        ApiService.getRecentActivity(_userId, manualRefresh: manualRefresh),
       ]);
 
       final stats = results[0] as SafetyStats;
@@ -384,6 +516,8 @@ class _HomeScreenState extends State<HomeScreen> {
         _safetyStats = stats;
         _recentActivities = activities;
         _isLoading = false;
+        _hasError = false;
+        _errorMessage = '';
       });
 
       _sessionStatsByUser[_userId] = stats;
@@ -394,9 +528,13 @@ class _HomeScreenState extends State<HomeScreen> {
       _timeoutTimer?.cancel();
       if (!mounted) return;
 
+      if (silent) {
+        return;
+      }
+
       setState(() {
         _hasError = true;
-        _errorMessage = e.toString();
+        _errorMessage = e.toString().replaceAll('Exception:', '').trim();
         _isLoading = false;
       });
     }
@@ -460,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _onRefresh() async {
     await _loadUserFromPrefsOrBackend();
-    await _loadHomeData(forceRefresh: true);
+    await _loadHomeData(forceRefresh: true, manualRefresh: true);
   }
 
   void _openBottomMenu() {
@@ -853,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
 
                 if (_isLoading) const SafetyScoreSkeleton(),
-                if (!_isLoading && !_hasError && _safetyStats != null)
+                if (!_isLoading && _safetyStats != null)
                   GestureDetector(
                     onTap: () {
                       Navigator.push(
@@ -868,7 +1006,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       trend: 8,
                     ),
                   ),
-                if (!_isLoading && (_hasError || _safetyStats == null))
+                if (!_isLoading && _safetyStats == null)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
@@ -894,9 +1032,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 20),
 
                 if (_isLoading) const StatsGridSkeleton(),
-                if (!_isLoading && !_hasError && _safetyStats != null)
+                if (!_isLoading && _safetyStats != null)
                   _buildStatsGridClickable(_safetyStats!),
-                if (!_isLoading && (_hasError || _safetyStats == null))
+                if (!_isLoading && _safetyStats == null)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
@@ -915,8 +1053,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 20),
 
                 if (_isLoading) const RecentActivitySkeleton(),
-                if (!_isLoading && !_hasError) _buildRecentActivity(),
-                if (!_isLoading && _hasError)
+                if (!_isLoading && _recentActivities.isNotEmpty) _buildRecentActivity(),
+                if (!_isLoading && _recentActivities.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Container(
@@ -1133,16 +1271,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               _quickActionTile(
-                label: _backgroundSafetyOn
-                    ? "Stop\nMonitoring"
-                    : "Start\nMonitoring",
-                icon: _backgroundSafetyOn
-                    ? Icons.stop_circle
-                    : Icons.mic,
-                color: _backgroundSafetyOn
-                    ? AppTheme.dangerColor
-                    : AppTheme.successColor,
-                onTap: _toggleBackgroundSafety,
+                label: "Start\nMonitoring",
+                icon: Icons.tune,
+                color: AppTheme.successColor,
+                onTap: _openMonitoringControls,
               ),
               _quickActionTile(
                 label: "Alert\nPolice",

@@ -1,8 +1,6 @@
 package com.example.mobile
 
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.*
 import okhttp3.*
@@ -10,7 +8,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import android.content.Context.MODE_PRIVATE
 
 object SafetySocket {
@@ -22,7 +19,6 @@ object SafetySocket {
 
     @Volatile private var connected = false
     @Volatile private var readyForAudio = false
-    private val reconnecting = AtomicBoolean(false)
 
     private var appContext: Context? = null
     private var threatCallback: (() -> Unit)? = null
@@ -66,7 +62,7 @@ object SafetySocket {
             val wsUrl = resolveWsUrl()
             if (wsUrl.isNullOrBlank()) {
                 Log.w("SafetySocket", "Missing/invalid ip_address; cannot open WS")
-                cleanupAndReconnect()
+                cleanupOnDisconnect()
                 return
             }
             Log.i("SafetySocket", "🌐 WS URL resolved: $wsUrl")
@@ -80,7 +76,6 @@ object SafetySocket {
             override fun onOpen(ws: WebSocket, response: Response) {
                 connected = true
                 readyForAudio = true
-                reconnecting.set(false)
                 Log.i("SafetySocket", "✅ WS OPEN (${response.code})")
                 ws.send("{\"type\":\"client_ready\",\"source\":\"android_safety_service\"}")
                 readyCallback?.invoke()
@@ -99,7 +94,7 @@ object SafetySocket {
 
             override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                 Log.w("SafetySocket", "🔴 WS CLOSED $code | $reason")
-                cleanupAndReconnect()
+                cleanupOnDisconnect()
             }
 
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
@@ -108,12 +103,12 @@ object SafetySocket {
                     "❌ WS FAILURE ${t.message} | code=${response?.code}",
                     t
                 )
-                cleanupAndReconnect()
+                cleanupOnDisconnect()
             }
             })
         } catch (e: Exception) {
             Log.e("SafetySocket", "Error opening WS: ${e.message}", e)
-            cleanupAndReconnect()
+            cleanupOnDisconnect()
         }
     }
 
@@ -155,17 +150,11 @@ object SafetySocket {
     // =========================
     // CLEANUP + RECONNECT
     // =========================
-    private fun cleanupAndReconnect() {
+    private fun cleanupOnDisconnect() {
         connected = false
         readyForAudio = false
         socket = null
-
-        if (reconnecting.getAndSet(true)) return
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            Log.i("SafetySocket", "🔁 Reconnecting WS")
-            scope.launch { openSocket() }
-        }, 2000)
+        Log.i("SafetySocket", "🛑 WS disconnected. Will not reconnect automatically.")
     }
 
     // =========================

@@ -28,7 +28,7 @@ class LocationSharingService : Service() {
 
     companion object {
         const val NOTIFICATION_ID = 102
-        const val NOTIFICATION_CHANNEL_ID = "safety_monitoring_channel"
+        const val NOTIFICATION_CHANNEL_ID = "location_sharing_channel"
         const val ACTION_STOP = "com.example.mobile.STOP_LOCATION_SHARING"
         private const val LOCATION_UPDATE_INTERVAL = 5000L  // 5 seconds
         private const val TAG = "LocationSharingService"
@@ -231,10 +231,10 @@ class LocationSharingService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 NOTIFICATION_CHANNEL_ID,
-                "Safety Monitoring",
+                "Location Sharing",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Background safety monitoring for audio and location"
+                description = "Background location sharing with your selected bubble"
             }
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
@@ -253,8 +253,8 @@ class LocationSharingService : Service() {
         )
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Women Safety Monitoring")
-            .setContentText("Monitoring active (audio + location)")
+            .setContentTitle("Location Sharing")
+            .setContentText("Sharing your live location in background")
             .setSmallIcon(android.R.drawable.ic_dialog_map)
             .setContentIntent(openAppPendingIntent)
             .setOngoing(true)

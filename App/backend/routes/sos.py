@@ -47,6 +47,88 @@ async def _append_notification(notifs_col, user_id: int, notification: dict):
     )
 
 
+async def _append_notification_with_collections(collections, user_id: int, notification: dict):
+    await _append_notification(collections["notifications"], user_id, notification)
+
+
+async def _update_auto_notification_status(notifs_col, user_id: int, pending_id: str, status: str, message: str):
+    await notifs_col.update_many(
+        {"user_id": user_id, "notifications.auto_pending_id": pending_id},
+        {
+            "$set": {
+                "notifications.$[item].auto_status": status,
+                "notifications.$[item].body": message,
+                "notifications.$[item].updated_at": datetime.now().isoformat(),
+            }
+        },
+        array_filters=[{"item.auto_pending_id": pending_id}],
+    )
+
+
+async def _notify_sos_mistaken_resolution(event_doc: dict, reason: str):
+    collections = get_collections()
+    users_col = collections["users"]
+    notifs_col = collections["notifications"]
+
+    owner_user_id = int(event_doc.get("user_id") or 0)
+    owner_name = str(event_doc.get("username") or "Member")
+    event_id = str(event_doc.get("id") or "")
+    if owner_user_id <= 0 or not event_id:
+        return
+
+    recipient_user_ids: set[int] = set()
+    for member in event_doc.get("bubble_members", []) or []:
+        member_user_id = member.get("user_id")
+        if isinstance(member_user_id, int) and member_user_id != owner_user_id:
+            recipient_user_ids.add(member_user_id)
+
+    contacts = event_doc.get("contacts_notified", []) or []
+    for phone in contacts:
+        if not isinstance(phone, str) or not phone.strip():
+            continue
+        user = await users_col.find_one({"phone": phone.strip()}, {"_id": 0, "id": 1, "fcm_tokens": 1})
+        if user and isinstance(user.get("id"), int) and user["id"] != owner_user_id:
+            recipient_user_ids.add(int(user["id"]))
+
+    title = f"SOS Update: {owner_name}"
+    body = "SOS was sent mistakenly or has been resolved."
+    data = {
+        "type": "sos_update",
+        "event_id": event_id,
+        "user_id": str(owner_user_id),
+        "status": "mistaken_or_resolved",
+        "reason": reason,
+    }
+
+    recipient_tokens: list[str] = []
+    for uid in recipient_user_ids:
+        user = await users_col.find_one({"id": uid}, {"_id": 0, "fcm_tokens": 1})
+        tokens = user.get("fcm_tokens", []) if user else []
+        if isinstance(tokens, list):
+            recipient_tokens.extend([t for t in tokens if isinstance(t, str)])
+
+        await _append_notification(
+            notifs_col,
+            uid,
+            {
+                "title": title,
+                "body": body,
+                "time": datetime.now().isoformat(),
+                "read": False,
+                "type": "alert",
+                "cause": reason,
+                "from_group_member": True,
+                "member_name": owner_name,
+                "member_user_id": owner_user_id,
+                "sos_event_id": event_id,
+                "sos_status": "mistaken_or_resolved",
+            },
+        )
+
+    if recipient_tokens:
+        send_fcm_notifications(recipient_tokens, title, body, data)
+
+
 async def _dispatch_sos_report(request: SOSRequest) -> dict:
     collections = get_collections()
     users_col = collections["users"]
@@ -269,6 +351,8 @@ async def _dispatch_sos_report(request: SOSRequest) -> dict:
             "sos_camera_front_image": front_image,
             "sos_camera_back_image": back_image,
             "audio_10s_url": audio_10s_url,
+            "sos_status": "active",
+            "resolved": False,
         },
     )
 
@@ -296,6 +380,8 @@ async def _dispatch_sos_report(request: SOSRequest) -> dict:
                 "sos_camera_back_image": back_image,
                 "audio_10s_url": audio_10s_url,
                 "sos_event_id": event_id,
+                "sos_status": "active",
+                "resolved": False,
             },
         )
 
@@ -311,6 +397,7 @@ async def _auto_send_after_countdown(pending_id: str):
         await asyncio.sleep(AUTO_SOS_COUNTDOWN_SECONDS)
         collections = get_collections()
         auto_pending_col = collections["sos_auto_pending"]
+        notifs_col = collections["notifications"]
 
         pending_doc = await auto_pending_col.find_one({"id": pending_id}, {"_id": 0})
         if not pending_doc or pending_doc.get("status") != "pending":
@@ -331,9 +418,17 @@ async def _auto_send_after_countdown(pending_id: str):
                 }
             },
         )
+        await _update_auto_notification_status(
+            notifs_col,
+            int(pending_doc.get("user_id") or 0),
+            pending_id,
+            "sent",
+            "Automatic SOS has been sent.",
+        )
     except Exception as exc:
         collections = get_collections()
         auto_pending_col = collections["sos_auto_pending"]
+        notifs_col = collections["notifications"]
         await auto_pending_col.update_one(
             {"id": pending_id},
             {
@@ -344,6 +439,15 @@ async def _auto_send_after_countdown(pending_id: str):
                 }
             },
         )
+        pending_doc = await auto_pending_col.find_one({"id": pending_id}, {"_id": 0, "user_id": 1})
+        if pending_doc and isinstance(pending_doc.get("user_id"), int):
+            await _update_auto_notification_status(
+                notifs_col,
+                pending_doc["user_id"],
+                pending_id,
+                "failed",
+                "Automatic SOS failed to send.",
+            )
     finally:
         _auto_sos_tasks.pop(pending_id, None)
 
@@ -358,6 +462,7 @@ async def start_automatic_sos_pending(request: AutomaticSOSStartRequest):
     collections = get_collections()
     users_col = collections["users"]
     auto_pending_col = collections["sos_auto_pending"]
+    notifs_col = collections["notifications"]
 
     user = await users_col.find_one({"id": request.user_id}, {"_id": 0})
     if not user:
@@ -421,6 +526,23 @@ async def start_automatic_sos_pending(request: AutomaticSOSStartRequest):
 
     _auto_sos_tasks[pending_id] = asyncio.create_task(_auto_send_after_countdown(pending_id))
 
+    await _append_notification(
+        notifs_col,
+        request.user_id,
+        {
+            "title": "Automatic SOS Countdown Started",
+            "body": "Automatic SOS countdown is in progress.",
+            "time": now.isoformat(),
+            "read": False,
+            "type": "alert",
+            "cause": request.reason,
+            "from_group_member": False,
+            "auto_pending_id": pending_id,
+            "auto_status": "pending",
+            "seconds_remaining": AUTO_SOS_COUNTDOWN_SECONDS,
+        },
+    )
+
     return {
         "success": True,
         "pending_id": pending_id,
@@ -435,6 +557,7 @@ async def start_automatic_sos_pending(request: AutomaticSOSStartRequest):
 async def cancel_automatic_sos(pending_id: str, request: AutomaticSOSCancelRequest):
     collections = get_collections()
     auto_pending_col = collections["sos_auto_pending"]
+    notifs_col = collections["notifications"]
 
     pending_doc = await auto_pending_col.find_one(
         {"id": pending_id, "user_id": request.user_id},
@@ -471,6 +594,13 @@ async def cancel_automatic_sos(pending_id: str, request: AutomaticSOSCancelReque
             }
         },
     )
+    await _update_auto_notification_status(
+        notifs_col,
+        request.user_id,
+        pending_id,
+        "cancelled",
+        "Automatic SOS has been cancelled by user.",
+    )
 
     return {
         "success": True,
@@ -478,6 +608,138 @@ async def cancel_automatic_sos(pending_id: str, request: AutomaticSOSCancelReque
         "status": "cancelled",
         "category": "false_alert" if is_false_alert else "user_cancelled",
         "message": "Automatic SOS cancelled successfully",
+    }
+
+
+@router.get("/{event_id}/status")
+async def get_sos_event_status(event_id: str, user_id: int):
+    collections = get_collections()
+    sos_events_col = collections["sos_events"]
+
+    event_doc = await sos_events_col.find_one({"id": event_id}, {"_id": 0})
+    if not event_doc:
+        raise HTTPException(status_code=404, detail="SOS event not found")
+
+    owner_id = int(event_doc.get("user_id") or 0)
+    is_recipient = False
+    if user_id == owner_id:
+        is_recipient = True
+    else:
+        for member in event_doc.get("bubble_members", []) or []:
+            if isinstance(member.get("user_id"), int) and int(member.get("user_id")) == user_id:
+                is_recipient = True
+                break
+
+    if not is_recipient:
+        raise HTTPException(status_code=403, detail="Not authorized to view this SOS status")
+
+    return {
+        "success": True,
+        "event_id": event_id,
+        "status": event_doc.get("status", "active"),
+        "resolved": bool(event_doc.get("resolved", False)),
+        "resolved_at": event_doc.get("resolved_at"),
+        "resolved_by": event_doc.get("resolved_by"),
+        "resolve_reason": event_doc.get("resolve_reason"),
+    }
+
+
+@router.patch("/{event_id}/cancel-mistaken")
+async def cancel_mistaken_sos(event_id: str, request: ResolveSOSRequest):
+    collections = get_collections()
+    sos_events_col = collections["sos_events"]
+    history_col = collections["history"]
+    notifs_col = collections["notifications"]
+
+    event_doc = await sos_events_col.find_one({"id": event_id}, {"_id": 0})
+    if not event_doc:
+        raise HTTPException(status_code=404, detail="SOS event not found")
+
+    if int(event_doc.get("user_id") or 0) != request.user_id:
+        raise HTTPException(status_code=403, detail="Only sender can mark this SOS as mistaken")
+
+    if event_doc.get("status") in {"cancelled", "resolved"}:
+        now = datetime.now().isoformat()
+        await notifs_col.update_many(
+            {"notifications.sos_event_id": event_id},
+            {
+                "$set": {
+                    "notifications.$[item].sos_status": "cancelled_by_sender",
+                    "notifications.$[item].resolved": True,
+                    "notifications.$[item].updated_at": now,
+                }
+            },
+            array_filters=[{"item.sos_event_id": event_id}],
+        )
+        return {
+            "success": True,
+            "message": "SOS already marked as resolved/cancelled",
+            "status": event_doc.get("status"),
+        }
+
+    now = datetime.now().isoformat()
+    reason = request.reason or "SOS was sent mistakenly or has been resolved"
+
+    await sos_events_col.update_one(
+        {"id": event_id, "user_id": request.user_id},
+        {
+            "$set": {
+                "status": "cancelled",
+                "resolved": True,
+                "resolved_at": now,
+                "resolved_by": "owner",
+                "resolve_reason": reason,
+                "cancel_category": "mistaken",
+            }
+        },
+    )
+
+    await collections["sos_reports"].update_one(
+        {"id": event_id, "user_id": request.user_id},
+        {
+            "$set": {
+                "status": "cancelled",
+                "resolved": True,
+                "resolved_at": now,
+                "resolved_by": "owner",
+                "resolve_reason": reason,
+                "cancel_category": "mistaken",
+            }
+        },
+    )
+
+    await history_col.update_one(
+        {"user_id": request.user_id, "history.id": event_id},
+        {
+            "$set": {
+                "history.$.resolved": True,
+                "history.$.status": "cancelled",
+                "history.$.resolved_at": now,
+                "history.$.resolve_reason": reason,
+            }
+        },
+    )
+
+    await notifs_col.update_many(
+        {"user_id": request.user_id, "notifications.sos_event_id": event_id},
+        {
+            "$set": {
+                "notifications.$[item].title": "SOS Cancelled by You",
+                "notifications.$[item].body": "You marked this SOS as mistakenly sent or resolved.",
+                "notifications.$[item].cause": reason,
+                "notifications.$[item].sos_status": "cancelled_by_sender",
+                "notifications.$[item].updated_at": now,
+            }
+        },
+        array_filters=[{"item.sos_event_id": event_id}],
+    )
+
+    await _notify_sos_mistaken_resolution(event_doc, reason)
+
+    return {
+        "success": True,
+        "message": "SOS was marked as mistakenly sent/resolved and recipients were notified",
+        "status": "cancelled",
     }
 
 
@@ -571,6 +833,7 @@ async def resolve_sos_event(event_id: str, request: ResolveSOSRequest):
     collections = get_collections()
     sos_events_col = collections["sos_events"]
     history_col = collections["history"]
+    notifs_col = collections["notifications"]
 
     now = datetime.now().isoformat()
     update_res = await sos_events_col.update_one(
@@ -597,6 +860,18 @@ async def resolve_sos_event(event_id: str, request: ResolveSOSRequest):
                 "history.$.resolved_at": now,
             }
         },
+    )
+
+    await notifs_col.update_many(
+        {"notifications.sos_event_id": event_id},
+        {
+            "$set": {
+                "notifications.$[item].sos_status": "resolved",
+                "notifications.$[item].resolved": True,
+                "notifications.$[item].updated_at": now,
+            }
+        },
+        array_filters=[{"item.sos_event_id": event_id}],
     )
 
     return {"success": True, "message": "SOS marked as resolved"}

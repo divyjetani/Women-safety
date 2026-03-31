@@ -1,22 +1,26 @@
-3 km radius ma safe zones batave
-
+show safezones in 3 km radius
 
 frontend:
-
+app language change from settings screen
+help & support in settings
+geo fencing feature in map screen
+nearest hospital button in bottom left
+payment frontend on register time
+play siren while sos is active (show toggle button for siren)
+report a abnormal situation and show it on map
 
 backend: 
+verify adhar card using ocr, api 
+send sms if offline
+press power button 2 times 
+wearable devices (smartwatch, to send sos)
+send sos  treath level: low when user enters unsafe zone 
+find nearby devices to check whether any device is following user's device
 
-split incoming audio into 4 sec chunks 
-also stt model and give it to whisper api, Train a small text classifier 
+data:
+change dataset for safety score
+police station data, hospital data, public transport data
 
-Final Threat Score =
-0.35 * audio_score +
-0.20 * motion_score +
-0.15 * keyword_score +                 done
-0.20 * location_risk_score * 0.01 +    done
-0.10 * time_risk_score
-
-threshold: 0.78 
 
 data: 
 audio 1000+ of scream and violence 
