@@ -7,6 +7,8 @@
 .buildlog/
 .history
 
+documentation/
+whisper test/
 App/backend/uploads/
 App/frontend/web/node_modules/
 App/backend/models/
@@ -18,6 +20,7 @@ Capstone project (1).pptx
 whisper test/audio.wav
 App/backend/profile_pics/
 count_lines_of_code.py
+backend.zip
 
 # Flutter repo-specific
 /bin/cache/

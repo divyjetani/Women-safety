@@ -9,7 +9,7 @@ from utils.profile_image import PROFILE_PICS_DIR
 from config.settings import SOS_MEDIA_DIR, AUDIO_CHUNKS_DIR, ANONYMOUS_RECORDINGS_DIR, FAKECALL_RECORDINGS_DIR
 
 prewarm_whisper_runtime()
-
+ 
 from routes import (
     auth,
     sos,

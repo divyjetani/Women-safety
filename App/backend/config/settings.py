@@ -7,7 +7,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-DATABASE_NAME = "shesafe"
+DATABASE_NAME = os.getenv("DATABASE_NAME", "shesafe")
+MONGO_TLS = os.getenv("MONGO_TLS")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "base")
 FCM_SERVER_KEY = os.getenv("FCM_SERVER_KEY", "")

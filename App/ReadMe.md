@@ -175,11 +175,20 @@ App/
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
+   # Motor 3.3.2 requires PyMongo 4.5.x; if conflict occurs, force:
+   python -m pip install "pymongo==4.5.0" "dnspython==2.8.0"
    ```
 
 4. Set up environment variables in `.env`:
    ```
+   # Local MongoDB (fallback)
    MONGO_URL=mongodb://localhost:27017
+   DATABASE_NAME=shesafe
+
+   # Mongo Atlas (recommended)
+   # MONGO_URL=mongodb+srv://<atlas_user>:<atlas_password>@<atlas_cluster>.mongodb.net/shesafe?retryWrites=true&w=majority
+   # DATABASE_NAME=shesafe
+
    GEMINI_API_KEY=your_gemini_api_key
    FCM_SERVER_KEY=your_fcm_server_key
    WHISPER_MODEL=base
