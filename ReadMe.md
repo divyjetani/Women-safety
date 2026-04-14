@@ -157,7 +157,6 @@ App/
 ### Prerequisites
 - Python 3.8+
 - MongoDB
-- Node.js (for web frontend)
 - Flutter (for mobile frontend)
 
 ### Backend Setup

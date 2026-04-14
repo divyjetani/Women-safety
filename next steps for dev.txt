@@ -22,13 +22,12 @@ change dataset for safety score
 police station data, hospital data, public transport data
 
 
+done till now:
+
 data: 
 audio 1000+ of scream and violence 
 2000+ labeled sentances 
 motion: synthetic data 
-
-
-done till now:
 
 show detailed notifications on notifications page (show time, read or not, type: threat, info, alret. what caused notification, if notification is from group member then show their location, battery, camera image, 10s sound)
 show detailed stat when i click to stats on home screen (remove those three stats card and instead add these: sos used, alerts today, and other two as you like)
