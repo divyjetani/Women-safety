@@ -2,9 +2,9 @@
 import joblib
 import pandas as pd
 
-model = joblib.load("C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/safety_model.pkl")
-encoders = joblib.load("C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/encoders.pkl")
-feature_order = joblib.load("C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/feature_order.pkl")
+model = joblib.load("../models/safety_model.pkl")
+encoders = joblib.load("../models/encoders.pkl")
+feature_order = joblib.load("../models/feature_order.pkl")
 
 def predict_safety(data_dict):
 

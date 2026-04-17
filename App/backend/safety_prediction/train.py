@@ -10,7 +10,7 @@ from math import radians
 from sklearn.metrics.pairwise import haversine_distances
 from sklearn.ensemble import GradientBoostingRegressor
 
-df = pd.read_csv("C:/Users/divyj/Desktop/study/Capstone_Project/App/data/data 2.csv")
+df = pd.read_csv("../../data/data 2.csv")
 
 EARTH_RADIUS = 6371  # km
 
@@ -90,7 +90,7 @@ model = GradientBoostingRegressor(n_estimators=300, learning_rate=0.05)
 
 model.fit(X_scaled, y)
 
-joblib.dump(model, "C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/geo_safety_model.pkl")
-joblib.dump(scaler, "C:/Users/divyj/Desktop/study/Capstone_Project/App/backend/models/geo_scaler.pkl")
+joblib.dump(model, "../models/geo_safety_model.pkl")
+joblib.dump(scaler, "../models/geo_scaler.pkl")
 
 print("Geo model trained.")

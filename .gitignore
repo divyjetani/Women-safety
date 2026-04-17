@@ -36,6 +36,8 @@ App/backend/.env
 
 # VS Code
 .vscode/
+.venv/
+.idea/
 
 # Flutter repo-specific
 /bin/cache/
