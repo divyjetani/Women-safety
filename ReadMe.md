@@ -5,67 +5,67 @@ She Safe is a comprehensive women safety application designed to provide real-ti
 
 ## Features
 
-### 🔐 Authentication & User Management
+### Authentication & User Management
 - User registration and login with secure password hashing
 - Profile management with image upload capabilities
 - Password reset functionality
 - Persistent server URL settings across app sessions
 
-### 🚨 SOS Emergency System
+### SOS Emergency System
 - One-tap SOS activation with automatic 13-second countdown
 - Real-time media capture (front/back camera images, 10-second audio)
 - Automatic alert dispatch to emergency contacts via FCM notifications
 - SMS fallback for critical alerts
 - SOS event tracking and resolution
 
-### 🎙️ Real-Time Audio Processing
+### Real-Time Audio Processing
 - Live audio transcription using OpenAI Whisper
 - Real-time threat detection in audio streams
 - Audio chunk processing and storage
 - WebSocket-based real-time communication
 
-### 🤖 AI-Powered Safety Assistant
+### AI-Powered Safety Assistant
 - Gemini AI integration for safety-related queries
 - Contextual safety suggestions and advice
 - Detailed responses with practical steps
 - Safety-focused question answering
 
-### 📍 Location-Based Safety
+### Location-Based Safety
 - Dynamic safety scoring based on geographical location
 - Machine learning model trained on crime data, police proximity, and crowd density
 - Real-time risk assessment
 - Nearest police station locator with distance calculation
 
-### 👥 Community & Groups
+### Community & Groups
 - Group creation and management for safety networks
 - Temporary "bubbles" for ad-hoc safety groups
 - Location sharing within groups via WebSocket
 - Member management and invitations
 
-### 📊 Analytics & Insights
+### Analytics & Insights
 - Comprehensive safety analytics dashboard
 - Alert history and patterns
 - Threat report analysis
 - Audio session analytics with threat scoring
 
-### 🛡️ Threat Detection & Reporting
+### Threat Detection & Reporting
 - Text-based threat classification using ML models
 - Anonymous threat reporting system
 - Threat level assessment (high/medium/low)
 - Historical threat data analysis
 
-### 📱 Recordings & Media
+### Recordings & Media
 - Anonymous audio recordings for safety documentation
 - Fake call recordings for emergency simulation
 - SOS media storage and retrieval
 - Secure file upload and management
 
-### 🔔 Notifications
+### Notifications
 - Push notifications via Firebase Cloud Messaging (FCM)
 - In-app notification management
 - Alert history and status tracking
 
-### 🔍 Additional Features
+### Additional Features
 - Quick actions for rapid safety responses
 - Guardian history tracking
 - Help and support system

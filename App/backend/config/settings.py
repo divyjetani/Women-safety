@@ -39,7 +39,6 @@ FAKECALL_RECORDINGS_DIR = UPLOADS_DIR / "fakecall_recordings"
 NORMAL_RECORDINGS_DIR = UPLOADS_DIR / "recordings"
 SOS_MEDIA_DIR = UPLOADS_DIR / "sos_media"
 
-# create directories if they don't exist
 for directory in [AUDIO_CHUNKS_DIR, ANONYMOUS_RECORDINGS_DIR, FAKECALL_RECORDINGS_DIR, NORMAL_RECORDINGS_DIR, SOS_MEDIA_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 

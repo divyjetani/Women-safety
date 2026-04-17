@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "c:/Users/divyj/Desktop/study/Capstone_Project/App/frontend/mobile/linux/flutter",
-      "program": "c:/Users/divyj/Desktop/study/Capstone_Project/App/frontend/mobile/linux/flutter/build/Debug/outDebug",
+      "cwd": "${workspaceFolder}/App/frontend/mobile/linux/flutter",
+      "program": "${workspaceFolder}/App/frontend/mobile/linux/flutter/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [

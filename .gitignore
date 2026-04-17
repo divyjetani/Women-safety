@@ -14,13 +14,28 @@ App/frontend/web/node_modules/
 App/backend/models/
 App/backend/audio_chunks/
 App/frontend/web/node_modules
-App/data
+data/
+App/data/
+App/backend/data/
 group 4.pdf
 Capstone project (1).pptx
 whisper test/audio.wav
 App/backend/profile_pics/
 count_lines_of_code.py
 backend.zip
+next_dev.txt
+startup.md
+
+# Environment variables
+.env*
+.env
+backend/.env*
+backend/.env
+App/backend/.env*
+App/backend/.env
+
+# VS Code
+.vscode/
 
 # Flutter repo-specific
 /bin/cache/

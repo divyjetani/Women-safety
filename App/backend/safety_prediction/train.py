@@ -1,35 +1,4 @@
 # App/backend/safety_prediction/train.py
-# from sklearn.ensemble import randomforestregressor
-# from sklearn.preprocessing import labelencoder
-# from sklearn.metrics import mean_squared_error
-
-# df = pd.read_excel("c:/users/divyj/desktop/study/capstone_project/app/data/data 1.xlsx")
-
-# # drop non-numeric / non-useful columns
-
-# # encode categorical columns
-
-
-# for col in categorical_cols:
-# df[col] = le.fit_transform(df[col])
-
-# # define features and target
-# x = df.drop(columns=["risk_score", "risk_level"])
-
-# # since dataset is tiny, do not split (splitting is meaningless here)
-# model = randomforestregressor(n_estimators=200, random_state=42)
-
-# # evaluate on training data (only because dataset is tiny)
-# predictions = model.predict(x)
-# mse = mean_squared_error(y, predictions)
-
-# print("model trained successfully")
-
-# # save model + encoders + feature order
-# joblib.dump(model, "c:/users/divyj/desktop/study/capstone_project/app/backend/models/safety_model.pkl")
-# joblib.dump(encoders, "c:/users/divyj/desktop/study/capstone_project/app/backend/models/encoders.pkl")
-# joblib.dump(x.columns.tolist(), "c:/users/divyj/desktop/study/capstone_project/app/backend/models/feature_order.pkl")
-
 
 import pandas as pd
 import numpy as np
